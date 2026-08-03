@@ -1,0 +1,3 @@
+dependencies:
+  espressif/esp_lvgl_adapter: ^0.1.0-beta.2
+  espressif/esp_lcd_co5300: ^2.0.1
