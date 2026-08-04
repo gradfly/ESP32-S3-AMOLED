@@ -6,6 +6,9 @@
 #include "esp_log.h"
 #include <string.h>
 
+/* 中文字体声明（由 lv_font_conv 生成，基于 msyh 字体） */
+extern const lv_font_t lv_font_cjk_14;
+
 static const char *TAG = "UI";
 
 static lv_obj_t *s_screen_main = NULL;
@@ -77,6 +80,12 @@ static lv_style_t s_btn_style;
 static lv_style_t s_label_style;
 static lv_style_t s_title_style;
 static lv_style_t s_list_item_selected_style;  /* 设备列表项选中样式：蓝底白字 */
+
+/* 便捷函数：为标签设置中文字体 */
+static void set_cjk_font(lv_obj_t *obj)
+{
+    lv_obj_set_style_text_font(obj, &lv_font_cjk_14, 0);
+}
 
 /* ====== 屏幕边缘滑动切换 ======
  * 主屏 / 数据屏 / PWM 屏 线性顺序：Main <-> Data <-> PWM。
@@ -292,7 +301,7 @@ static void gesture_swipe_to_main(void)
     /* 更新手势屏底部汇总 + 清除选中高亮（下次进入为干净状态） */
     if (s_gesture_info_label) {
         char buf[64];
-        snprintf(buf, sizeof(buf), "输出脉宽: %u %u %u %u %u %u",
+        snprintf(buf, sizeof(buf), "PWM: %u %u %u %u %u %u",
                  s_gesture_rest_pose[0], s_gesture_rest_pose[1], s_gesture_rest_pose[2],
                  s_gesture_rest_pose[3], s_gesture_rest_pose[4], s_gesture_rest_pose[5]);
         lv_label_set_text(s_gesture_info_label, buf);
@@ -398,7 +407,7 @@ static void create_main_screen(void)
     lv_obj_set_style_bg_color(s_screen_main, lv_color_hex(0xFFFFFF), 0);
 
     lv_obj_t *title = lv_label_create(s_screen_main);
-    lv_label_set_text(title, "选择模式");
+    lv_label_set_text(title, "Select Mode");
     lv_obj_add_style(title, &s_title_style, 0);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 30);
 
@@ -408,7 +417,9 @@ static void create_main_screen(void)
     lv_obj_set_size(s_scan_btn, 200, 50);
     lv_obj_align(s_scan_btn, LV_ALIGN_CENTER, 0, -50);
     lv_obj_t *scan_label = lv_label_create(s_scan_btn);
-    lv_label_set_text(scan_label, "扫描设备");
+    lv_label_set_text(scan_label, "SCAN");
+    lv_obj_set_style_text_font(scan_label, &lv_font_montserrat_22, 0);
+    lv_obj_center(scan_label);
     lv_obj_add_event_cb(s_scan_btn, event_scan_btn_cb, LV_EVENT_CLICKED, NULL);
 
     /* "自主训练"：进入手势屏（无需 BLE 连接，离线浏览 12 个手势） */
@@ -417,11 +428,13 @@ static void create_main_screen(void)
     lv_obj_set_size(train_btn, 200, 50);
     lv_obj_align(train_btn, LV_ALIGN_CENTER, 0, 20);
     lv_obj_t *train_label = lv_label_create(train_btn);
-    lv_label_set_text(train_label, "自主训练");
+    lv_label_set_text(train_label, "TRAINING");
+    lv_obj_set_style_text_font(train_label, &lv_font_montserrat_22, 0);
+    lv_obj_center(train_label);
     lv_obj_add_event_cb(train_btn, event_train_btn_cb, LV_EVENT_CLICKED, NULL);
 
     s_status_label = lv_label_create(s_screen_main);
-    lv_label_set_text(s_status_label, "准备就绪");
+    lv_label_set_text(s_status_label, "Ready");
     lv_obj_add_style(s_status_label, &s_label_style, 0);
     lv_obj_align(s_status_label, LV_ALIGN_CENTER, 0, 80);
 }
@@ -433,7 +446,7 @@ static void create_list_screen(void)
     lv_obj_set_style_bg_color(s_screen_list, lv_color_hex(0xFFFFFF), 0);
 
     lv_obj_t *title = lv_label_create(s_screen_list);
-    lv_label_set_text(title, "设备列表");
+    lv_label_set_text(title, "Devices");
     lv_obj_add_style(title, &s_title_style, 0);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 20);
 
@@ -441,7 +454,9 @@ static void create_list_screen(void)
     lv_obj_set_size(back_btn, 60, 40);
     lv_obj_align(back_btn, LV_ALIGN_TOP_LEFT, 10, 15);
     lv_obj_t *back_label = lv_label_create(back_btn);
-    lv_label_set_text(back_label, "返回");
+    lv_label_set_text(back_label, "Back");
+    lv_obj_set_style_text_font(back_label, &lv_font_montserrat_16, 0);
+    lv_obj_center(back_label);
     lv_obj_add_event_cb(back_btn, event_back_btn_cb, LV_EVENT_CLICKED, NULL);
 
     s_scan_list = lv_list_create(s_screen_list);
@@ -453,7 +468,9 @@ static void create_list_screen(void)
     lv_obj_set_size(s_connect_btn, 200, 50);
     lv_obj_align(s_connect_btn, LV_ALIGN_BOTTOM_MID, 0, -20);
     lv_obj_t *connect_label = lv_label_create(s_connect_btn);
-    lv_label_set_text(connect_label, "连接");
+    lv_label_set_text(connect_label, "Connect");
+    lv_obj_set_style_text_font(connect_label, &lv_font_montserrat_16, 0);
+    lv_obj_center(connect_label);
     lv_obj_add_event_cb(s_connect_btn, event_connect_btn_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_add_flag(s_connect_btn, LV_OBJ_FLAG_HIDDEN);
 }
@@ -465,7 +482,7 @@ static void create_data_screen(void)
     lv_obj_set_style_bg_color(s_screen_data, lv_color_hex(0xFFFFFF), 0);
 
     lv_obj_t *title = lv_label_create(s_screen_data);
-    lv_label_set_text(title, "BLE 数据");
+    lv_label_set_text(title, "BLE Data");
     lv_obj_add_style(title, &s_title_style, 0);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 12);
 
@@ -482,7 +499,7 @@ static void create_data_screen(void)
 
     /* 连接状态行：显示已连接的设备名 */
     s_data_status_label = lv_label_create(s_screen_data);
-    lv_label_set_text(s_data_status_label, "连接中...");
+    lv_label_set_text(s_data_status_label, "Connecting...");
     lv_obj_add_style(s_data_status_label, &s_label_style, 0);
     lv_obj_set_style_text_color(s_data_status_label, lv_color_hex(0x34C759), 0);
     lv_obj_align(s_data_status_label, LV_ALIGN_TOP_MID, 0, 52);
@@ -530,7 +547,7 @@ static void create_data_screen(void)
 
     /* 最新一帧原始数据（调试用，单行省略） */
     s_raw_label = lv_label_create(s_screen_data);
-    lv_label_set_text(s_raw_label, "原始数据：: --");
+    lv_label_set_text(s_raw_label, "Raw: --");
     lv_obj_add_style(s_raw_label, &s_label_style, 0);
     lv_obj_set_style_text_color(s_raw_label, lv_color_hex(0x8E8E93), 0);
     lv_obj_set_width(s_raw_label, EXAMPLE_LCD_H_RES - 16);
@@ -542,7 +559,9 @@ static void create_data_screen(void)
     lv_obj_set_size(s_disconnect_btn, 120, 42);
     lv_obj_align(s_disconnect_btn, LV_ALIGN_BOTTOM_LEFT, 10, -10);
     lv_obj_t *disconnect_label = lv_label_create(s_disconnect_btn);
-    lv_label_set_text(disconnect_label, "断开连接");
+    lv_label_set_text(disconnect_label, "Disconnect");
+    lv_obj_set_style_text_font(disconnect_label, &lv_font_montserrat_18, 0);
+    lv_obj_center(disconnect_label);
     lv_obj_add_event_cb(s_disconnect_btn, event_disconnect_btn_cb, LV_EVENT_CLICKED, NULL);
 
     lv_obj_t *clear_btn = lv_btn_create(s_screen_data);
@@ -551,7 +570,9 @@ static void create_data_screen(void)
     lv_obj_set_size(clear_btn, 120, 42);
     lv_obj_align(clear_btn, LV_ALIGN_BOTTOM_RIGHT, -10, -10);
     lv_obj_t *clear_label = lv_label_create(clear_btn);
-    lv_label_set_text(clear_label, "清除数据");
+    lv_label_set_text(clear_label, "Clear");
+    lv_obj_set_style_text_font(clear_label, &lv_font_montserrat_18, 0);
+    lv_obj_center(clear_label);
     lv_obj_add_event_cb(clear_btn, event_clear_data_cb, LV_EVENT_CLICKED, NULL);
 }
 
@@ -565,7 +586,7 @@ static void create_pwm_screen(void)
     lv_obj_set_style_bg_color(s_screen_pwm, lv_color_hex(0xFFFFFF), 0);
 
     lv_obj_t *title = lv_label_create(s_screen_pwm);
-    lv_label_set_text(title, "PWM 输出");
+    lv_label_set_text(title, "PWM Output");
     lv_obj_add_style(title, &s_title_style, 0);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 12);
 
@@ -577,11 +598,11 @@ static void create_pwm_screen(void)
     // lv_label_set_text(back_label, "Back");
     // lv_obj_add_event_cb(back_btn, event_pwm_back_btn_cb, LV_EVENT_CLICKED, NULL);
 
-    /* 顶部状态行：阈值规则 + 点击覆盖提示 */
+    /* 顶部状态行：连接状态（与数据屏同步） */
     s_pwm_status_label = lv_label_create(s_screen_pwm);
-    lv_label_set_text(s_pwm_status_label, ">1650->2000us  else 1000us  tap->1500us");
+    lv_label_set_text(s_pwm_status_label, "Connecting...");
     lv_obj_add_style(s_pwm_status_label, &s_label_style, 0);
-    lv_obj_set_style_text_color(s_pwm_status_label, lv_color_hex(0x8E8E93), 0);
+    lv_obj_set_style_text_color(s_pwm_status_label, lv_color_hex(0x34C759), 0);
     lv_obj_align(s_pwm_status_label, LV_ALIGN_TOP_MID, 0, 52);
 
     /* 6 格网格：2 列手动定位（CH1~CH5 硬件通道 + CH6 显示镜像）。
@@ -654,20 +675,21 @@ static void create_pwm_screen(void)
     lv_obj_set_style_shadow_width(s_estop_btn, 0, 0);
     lv_obj_set_style_pad_all(s_estop_btn, 0, 0);
     s_estop_label = lv_label_create(s_estop_btn);
-    lv_label_set_text(s_estop_label, "急停");
+    lv_label_set_text(s_estop_label, "E-STOP");
     lv_obj_set_style_text_font(s_estop_label, &lv_font_montserrat_20, 0);
     lv_obj_set_style_text_color(s_estop_label, lv_color_white(), 0);
     lv_obj_center(s_estop_label);
     lv_obj_add_event_cb(s_estop_btn, event_estop_btn_cb, LV_EVENT_CLICKED, NULL);
 
-    /* 底部信息行：6 路输出脉宽汇总（一眼看出哪些通道为高） */
+    /* 底部信息行：操作提示 */
     s_pwm_info_label = lv_label_create(s_screen_pwm);
-    lv_label_set_text(s_pwm_info_label, "输出脉宽: ---- ---- ---- ---- ---- ----");
+    lv_label_set_text(s_pwm_info_label, "Tips: Click the Ch channel to pause single-finger movement. Click E-STOP to pause all movements; click again to resume.");
     lv_obj_add_style(s_pwm_info_label, &s_label_style, 0);
     lv_obj_set_style_text_color(s_pwm_info_label, lv_color_hex(0x333333), 0);
     lv_obj_set_width(s_pwm_info_label, EXAMPLE_LCD_H_RES - 16);
-    lv_label_set_long_mode(s_pwm_info_label, LV_LABEL_LONG_DOT);
-    lv_obj_align(s_pwm_info_label, LV_ALIGN_TOP_MID, 0, 368);
+    /* WRAP 模式：按设置的宽度自动换行；需配合 recolor=off 避免解析开销 */
+    lv_label_set_long_mode(s_pwm_info_label, LV_LABEL_LONG_WRAP);
+    lv_obj_align(s_pwm_info_label, LV_ALIGN_TOP_MID, 0, 310);
 
     /* 底部按钮：Disconnect（复用） + Clear（清空 PWM 显示） */
     lv_obj_t *disconnect_btn = lv_btn_create(s_screen_pwm);
@@ -675,7 +697,9 @@ static void create_pwm_screen(void)
     lv_obj_set_size(disconnect_btn, 120, 42);
     lv_obj_align(disconnect_btn, LV_ALIGN_BOTTOM_LEFT, 10, -10);
     lv_obj_t *disconnect_label = lv_label_create(disconnect_btn);
-    lv_label_set_text(disconnect_label, "断开连接");
+    lv_label_set_text(disconnect_label, "Disconnect");    
+    lv_obj_set_style_text_font(disconnect_label, &lv_font_montserrat_18, 0);
+    lv_obj_center(disconnect_label);
     lv_obj_add_event_cb(disconnect_btn, event_disconnect_btn_cb, LV_EVENT_CLICKED, NULL);
 
     lv_obj_t *clear_btn = lv_btn_create(s_screen_pwm);
@@ -684,7 +708,9 @@ static void create_pwm_screen(void)
     lv_obj_set_size(clear_btn, 120, 42);
     lv_obj_align(clear_btn, LV_ALIGN_BOTTOM_RIGHT, -10, -10);
     lv_obj_t *clear_label = lv_label_create(clear_btn);
-    lv_label_set_text(clear_label, "清空输出");
+    lv_label_set_text(clear_label, "Clear All");
+    lv_obj_set_style_text_font(clear_label, &lv_font_montserrat_18, 0);
+    lv_obj_center(clear_label);
     lv_obj_add_event_cb(clear_btn, event_clear_pwm_cb, LV_EVENT_CLICKED, NULL);
 }
 
@@ -722,13 +748,13 @@ static void create_gesture_screen(void)
     lv_obj_set_style_bg_color(s_screen_gesture, lv_color_hex(0xFFFFFF), 0);
 
     lv_obj_t *title = lv_label_create(s_screen_gesture);
-    lv_label_set_text(title, "手势");
+    lv_label_set_text(title, "Gesture");
     lv_obj_add_style(title, &s_title_style, 0);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 12);
 
     /* 顶部状态行：手势总数提示 */
     s_gesture_status_label = lv_label_create(s_screen_gesture);
-    lv_label_set_text(s_gesture_status_label, "共 12 个手势");
+    lv_label_set_text(s_gesture_status_label, "12 Gestures");
     lv_obj_add_style(s_gesture_status_label, &s_label_style, 0);
     lv_obj_set_style_text_color(s_gesture_status_label, lv_color_hex(0x8E8E93), 0);
     lv_obj_align(s_gesture_status_label, LV_ALIGN_TOP_MID, 0, 52);
@@ -784,7 +810,7 @@ static void create_gesture_screen(void)
 
     /* 底部信息行：6 路输出脉宽汇总（与 PWM 屏汇总行同格式同位置） */
     s_gesture_info_label = lv_label_create(s_screen_gesture);
-    lv_label_set_text(s_gesture_info_label, "输出脉宽: ---- ---- ---- ---- ---- ----");
+    lv_label_set_text(s_gesture_info_label, "PWM: ---- ---- ---- ---- ---- ----");
     lv_obj_add_style(s_gesture_info_label, &s_label_style, 0);
     lv_obj_set_style_text_color(s_gesture_info_label, lv_color_hex(0x333333), 0);
     lv_obj_set_width(s_gesture_info_label, EXAMPLE_LCD_H_RES - 16);
@@ -802,7 +828,7 @@ static void gesture_update_info_label(const uint16_t *us)
 
     if (s_gesture_info_label) {
         char buf[64];
-        snprintf(buf, sizeof(buf), "输出脉宽: %u %u %u %u %u %u",
+        snprintf(buf, sizeof(buf), "PWM: %u %u %u %u %u %u",
                  us[0], us[1], us[2], us[3], us[4], us[5]);
         lv_label_set_text(s_gesture_info_label, buf);
     }
@@ -821,13 +847,13 @@ static void create_uuid_screen(void)
     lv_obj_set_style_pad_all(s_screen_uuid, 8, 0);
 
     lv_obj_t *title = lv_label_create(s_screen_uuid);
-    lv_label_set_text(title, "UUID 设置");
+    lv_label_set_text(title, "UUID Config");
     lv_obj_add_style(title, &s_title_style, 0);
     lv_obj_set_style_text_font(title, &lv_font_montserrat_18, 0);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 0);
 
     /* 3 个 UUID 字段：标签 + 单行 textarea，最大 8 字符（16/32 位 hex） */
-    static const char *labels[3]   = {"服务", "通知", "特征"};
+    static const char *labels[3]   = {"Service", "Notify", "Write"};
     /* 目标手机 GATT（nRF Connect 实测）：
      *   Service: 0000FFF0-0000-1000-8000-00805F9B34FB
      *   Notify : 0000FFF1-0000-1000-8000-00805F9B34FB
@@ -888,7 +914,7 @@ static void create_uuid_screen(void)
     lv_obj_set_size(cancel_btn, half_w, 44);
     lv_obj_set_pos(cancel_btn, 0, 372);
     lv_obj_t *cancel_lbl = lv_label_create(cancel_btn);
-    lv_label_set_text(cancel_lbl, "取消");
+    lv_label_set_text(cancel_lbl, "Cancel");
     lv_obj_center(cancel_lbl);
     lv_obj_add_event_cb(cancel_btn, event_uuid_cancel_cb, LV_EVENT_CLICKED, NULL);
 
@@ -897,7 +923,7 @@ static void create_uuid_screen(void)
     lv_obj_set_size(connect_btn, half_w, 44);
     lv_obj_set_pos(connect_btn, half_w + 8, 372);
     lv_obj_t *connect_lbl = lv_label_create(connect_btn);
-    lv_label_set_text(connect_lbl, "连接");
+    lv_label_set_text(connect_lbl, "Connect");
     lv_obj_center(connect_lbl);
     lv_obj_add_event_cb(connect_btn, event_uuid_connect_cb, LV_EVENT_CLICKED, NULL);
 }
@@ -968,11 +994,11 @@ static void event_uuid_connect_cb(lv_event_t *e)
             sizeof(s_connected_name) - 1);
     s_connected_name[sizeof(s_connected_name) - 1] = '\0';
 
-    /* 切到数据屏显示 "Connecting..."，再发起连接（connect_task 异步执行） */
-    if (s_data_status_label) {
-        lv_label_set_text(s_data_status_label, "连接中...");
-    }
+    /* 先切到数据屏，再更新状态——避免在非活动屏上操作对象 */
     ui_switch_screen(UI_SCREEN_DATA);
+    if (s_data_status_label) {
+        lv_label_set_text(s_data_status_label, "Connecting...");
+    }
     ble_manager_connect(&s_device_list[s_selected_device], &uuids);
 }
 
@@ -1014,48 +1040,59 @@ void ui_update_state(ble_state_t state, const char *message)
 
     if (xSemaphoreTakeRecursive(mux, pdMS_TO_TICKS(100)) != pdTRUE) return;
 
-    if (s_status_label) {
+    /* s_status_label 属于主屏；仅在主屏活动时更新，避免对非活动屏对象操作
+     * 触发重绘导致 LVGL 卡死（SCAN 时活动屏为 LIST，断开时为 DATA/PWM） */
+    if (s_status_label && lv_scr_act() == s_screen_main) {
         lv_label_set_text(s_status_label, message);
     }
 
     switch (state) {
     case BLE_STATE_SCANNING:
-        if (s_scan_btn) {
+        /* s_scan_btn 属于主屏；SCAN 由 LIST 屏触发，此时主屏非活动，仅匹配时更新 */
+        if (s_scan_btn && lv_scr_act() == s_screen_main) {
             lv_obj_t *lbl = lv_obj_get_child(s_scan_btn, 0);
-            if (lbl) lv_label_set_text(lbl, "扫描中...");
+            if (lbl) lv_label_set_text(lbl, "Scanning...");
             lv_obj_add_state(s_scan_btn, LV_STATE_DISABLED);
         }
         break;
     case BLE_STATE_IDLE:
-        if (s_scan_btn) {
+        if (s_scan_btn && lv_scr_act() == s_screen_main) {
             lv_obj_t *lbl = lv_obj_get_child(s_scan_btn, 0);
-            if (lbl) lv_label_set_text(lbl, "扫描设备");
+            if (lbl) lv_label_set_text(lbl, "Scan");
             lv_obj_clear_state(s_scan_btn, LV_STATE_DISABLED);
         }
         break;
     case BLE_STATE_CONNECTING:
-        if (s_data_status_label) {
-            lv_label_set_text(s_data_status_label, "连接中...");
+        /* CONNECTING 由 UUID 屏触发，DATA/PWM 均非活动，仅活动屏匹配时更新 */
+        if (s_data_status_label && lv_scr_act() == s_screen_data) {
+            lv_label_set_text(s_data_status_label, "Connecting...");
+        }
+        if (s_pwm_status_label && lv_scr_act() == s_screen_pwm) {
+            lv_label_set_text(s_pwm_status_label, "Connecting...");
         }
         break;
     case BLE_STATE_CONNECTED:
+        /* 先切换到数据屏，再操作对象——避免在非活动屏上操作导致卡死 */
+        ui_switch_screen(UI_SCREEN_DATA);
         if (s_data_status_label) {
             char buf[48];
-            snprintf(buf, sizeof(buf), "已连接到: %s",
-                             s_connected_name[0] ? s_connected_name : "设备");
+            snprintf(buf, sizeof(buf), "Connected: %s",
+                             s_connected_name[0] ? s_connected_name : "Device");
             lv_label_set_text(s_data_status_label, buf);
         }
+        /* PWM 屏此时非活动，不直接更新其对象；进入 PWM 屏后由数据刷新覆盖 */
         ui_clear_data();
         ui_clear_pwm();
-        ui_switch_screen(UI_SCREEN_DATA);
         break;
     case BLE_STATE_DISCONNECTED:
         s_connected_name[0] = '\0';
-        if (s_data_status_label) {
-            lv_label_set_text(s_data_status_label, "已断开");
-        }
-        ui_clear_pwm();
+        /* 先切换到主屏，再操作主屏对象；DATA/PWM 屏此时为非活动，
+         * 不再直接更新其对象（避免对非活动屏写导致 LVGL 卡死）。
+         * 下次连接或进入对应屏时由 CONNECTING/CONNECTED 或激活逻辑重置。 */
         ui_switch_screen(UI_SCREEN_MAIN);
+        if (s_status_label) {
+            lv_label_set_text(s_status_label, message);
+        }
         break;
     default:
         break;
@@ -1104,6 +1141,8 @@ void ui_update_scan_results(void)
 
             lv_obj_t *btn = lv_list_add_btn(s_scan_list, LV_SYMBOL_WIFI, buf);
             lv_obj_set_user_data(btn, (void *)(intptr_t)i);
+            /* 为列表项内的标签设置中文字体 */
+            lv_obj_t *btn_label = lv_obj_get_child(btn, 0);
             /* 启用可选中标志 + 绑定选中样式（蓝底白字，仅在 LV_STATE_CHECKED 下生效） */
             lv_obj_add_flag(btn, LV_OBJ_FLAG_CHECKABLE);
             lv_obj_add_style(btn, &s_list_item_selected_style, LV_PART_MAIN | LV_STATE_CHECKED);
@@ -1137,9 +1176,9 @@ void ui_append_data(const uint8_t *data, uint16_t len)
     if (s_raw_label && len > 0) {
         char buf[128];
         uint16_t copy_len = (len < sizeof(buf) - 8) ? len : sizeof(buf) - 8;
-        memcpy(buf, "原始数据: ", 10);
-        memcpy(buf + 10, data, copy_len);
-        buf[10 + copy_len] = '\0';
+        memcpy(buf, "Raw: ", 5);
+        memcpy(buf + 5, data, copy_len);
+        buf[5 + copy_len] = '\0';
         lv_label_set_text(s_raw_label, buf);
     }
 
@@ -1176,7 +1215,7 @@ void ui_clear_data(void)
         }
     }
     if (s_raw_label) {
-        lv_label_set_text(s_raw_label, "原始数据: --");
+        lv_label_set_text(s_raw_label, "Raw: --");
     }
 
     xSemaphoreGiveRecursive(mux);
@@ -1201,10 +1240,6 @@ void ui_update_pwm_values(const int16_t *values, uint8_t count)
 
     /* 全局急停：开启时所有通道显示并输出 1500us */
     bool estop = pwm_manager_get_estop();
-
-    /* 底部汇总行的 6 段输出脉宽 */
-    char summary[56] = "输出脉宽:";
-    uint8_t summary_len = 6;
 
     for (uint8_t i = 0; i < PWM_CHANNEL_COUNT; i++) {
         bool ovr = pwm_manager_get_override(i);
@@ -1280,26 +1315,11 @@ void ui_update_pwm_values(const int16_t *values, uint8_t count)
                 lv_obj_set_style_border_width(s_pwm_cells[i].cell, 0, 0);
             }
         }
-
-        /* 追加到底部汇总 */
-        if (show_value) {
-            int remain = (int)sizeof(summary) - (int)summary_len;
-            int w = snprintf(summary + summary_len, remain, " %u", us);
-            if (w > 0) summary_len += w;
-        } else {
-            int remain = (int)sizeof(summary) - (int)summary_len;
-            int w = snprintf(summary + summary_len, remain, " ----");
-            if (w > 0) summary_len += w;
-        }
-    }
-
-    if (s_pwm_info_label) {
-        lv_label_set_text(s_pwm_info_label, summary);
     }
 
     /* 急停按钮文字 + 样式：OFF -> "急停"(亮红) / ON -> "恢复"(深红+黄边) */
     if (s_estop_label) {
-        lv_label_set_text(s_estop_label, estop ? "恢复" : "急停"); 
+        lv_label_set_text(s_estop_label, estop ? "Resume" : "E-STOP");
     }
     if (s_estop_btn) {
         if (estop) {
@@ -1322,6 +1342,13 @@ void ui_clear_pwm(void)
 
     if (xSemaphoreTakeRecursive(mux, pdMS_TO_TICKS(100)) != pdTRUE) return;
 
+    /* 仅在 PWM 屏活动时清屏——对非活动屏对象操作会触发重绘导致 LVGL 卡死。
+     * CONNECTED 等场景调用时 PWM 屏非活动，由后续数据刷新覆盖即可。 */
+    if (lv_scr_act() != s_screen_pwm) {
+        xSemaphoreGiveRecursive(mux);
+        return;
+    }
+
     for (uint8_t i = 0; i < PWM_CHANNEL_COUNT; i++) {
         if (s_pwm_cells[i].input) {
             lv_label_set_text(s_pwm_cells[i].input, "----");
@@ -1336,12 +1363,10 @@ void ui_clear_pwm(void)
             lv_obj_set_style_border_width(s_pwm_cells[i].cell, 0, 0);
         }
     }
-    if (s_pwm_info_label) {
-        lv_label_set_text(s_pwm_info_label, "输出脉宽: ---- ---- ---- ---- ---- ----");
-    }
+    /* s_pwm_info_label 为固定操作提示，清屏时不重置 */
     /* 急停按钮文字复位（不影响急停状态本身——状态由 pwm_manager 维护） */
     if (s_estop_label) {
-        lv_label_set_text(s_estop_label, pwm_manager_get_estop() ? "恢复" : "急停"); 
+        lv_label_set_text(s_estop_label, pwm_manager_get_estop() ? "Resume" : "E-STOP"); 
     }
 
     xSemaphoreGiveRecursive(mux);
@@ -1407,8 +1432,8 @@ static void event_connect_btn_cb(lv_event_t *e)
     if (s_selected_device >= s_device_count) {
         return;
     }
-    /* 不直接连接：弹出 UUID 设置屏，让用户确认/修改 服务/通知/写 UUID。
-     * 每次进入都重置为默认值（FFF0/FFF1/FFF2），并高亮服务字段。 */
+    /* 先切换到 UUID 屏，再初始化 textarea——避免在非活动屏上操作对象导致卡死 */
+    ui_switch_screen(UI_SCREEN_UUID);
     lv_textarea_set_text(s_ta_service, "FFF0");
     lv_textarea_set_text(s_ta_notify, "FFF1");
     lv_textarea_set_text(s_ta_write, "FFF2");
@@ -1416,7 +1441,6 @@ static void event_connect_btn_cb(lv_event_t *e)
     lv_obj_set_style_border_color(s_ta_service, lv_color_hex(0x007AFF), 0);
     lv_obj_set_style_border_color(s_ta_notify, lv_color_hex(0xCCCCCC), 0);
     lv_obj_set_style_border_color(s_ta_write, lv_color_hex(0xCCCCCC), 0);
-    ui_switch_screen(UI_SCREEN_UUID);
 }
 
 static void event_disconnect_btn_cb(lv_event_t *e)

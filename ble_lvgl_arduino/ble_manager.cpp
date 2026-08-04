@@ -728,12 +728,11 @@ void ble_manager_start_scan(void)
 
     update_state(BLE_STATE_SCANNING, "Scanning...");
 
-    Serial.println("[BLE] Starting BLE scan (5 seconds)...");
-    ESP_LOGI(TAG, "Starting BLE scan for 5 seconds...");
+    Serial.println("[BLE] Starting BLE scan (1 seconds)...");
+    ESP_LOGI(TAG, "Starting BLE scan for 1 seconds...");
 
-    // NimBLE start() 的 duration 参数单位为毫秒，5s = 5000ms
-    // restart=true 确保即使上次扫描状态残留也能正确重启
-    bool ok = s_scan->start(5000, false, true);
+    // NimBLE start() 的 duration 参数单位为毫秒，1s = 1000ms
+    bool ok = s_scan->start(1000, false, true);
     if (!ok) {
         ESP_LOGE(TAG, "Scan failed to start");
         Serial.println("[BLE] ERROR: Scan failed to start!");
@@ -741,7 +740,7 @@ void ble_manager_start_scan(void)
         return;
     }
 
-    ESP_LOGI(TAG, "Scan started (5000ms)");
+    ESP_LOGI(TAG, "Scan started (1000ms)");
     s_scan_start_ms = millis();
     Serial.printf("[BLE] Scan started at %lu ms, waiting for results...\n", (unsigned long)s_scan_start_ms);
 }

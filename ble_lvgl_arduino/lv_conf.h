@@ -46,7 +46,7 @@
 #define LV_FONT_MONTSERRAT_24 1
 #define LV_FONT_DEFAULT &lv_font_montserrat_14
 
-#define LV_USE_TEXT_UTF8 0
+#define LV_USE_TEXT_UTF8 1
 #define LV_USE_TEXT_ASCII 1
 
 #define LV_USE_FS_STDIO 0
