@@ -614,6 +614,10 @@ static bool connect_to_server(NimBLEAddress address)
     const uint8_t *addr_native = address.getVal();
     memcpy(s_remote_mac, addr_native, 6);
 
+    /* 标记已连接：ble_manager_disconnect / ble_manager_send_data 都依赖
+     * 此标志判断链路状态。之前漏掉这行导致 disconnect 时 s_is_connected
+     * 仍为 false，s_client->disconnect() 被跳过，BLE 链路实际未断开。 */
+    s_is_connected = true;
     update_state(BLE_STATE_CONNECTED, "Connected");
     Serial.println("[BLE] Connection successful!");
     return true;
@@ -799,8 +803,13 @@ void ble_manager_connect(const ble_device_info_t *device, const ble_uuid_config_
 
 void ble_manager_disconnect(void)
 {
-    if (s_client && s_is_connected) {
+    /* 只要 client 存在就执行真正的链路断开 + 释放，避免依赖 s_is_connected
+     * 标志（历史 bug：连接成功后未置 true，导致此处跳过 disconnect）。
+     * 与 abort_connection() 保持一致的清理模式。 */
+    if (s_client) {
         s_client->disconnect();
+        NimBLEDevice::deleteClient(s_client);
+        s_client = nullptr;
     }
     s_is_connected = false;
     s_rx_char = nullptr;

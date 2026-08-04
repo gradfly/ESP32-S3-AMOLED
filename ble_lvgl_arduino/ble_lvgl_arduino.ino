@@ -5,6 +5,7 @@
 #include "FT3168.h"
 #include "ble_manager.h"
 #include "ui_main.h"
+#include "pwm_manager.h"
 
 /* 最新一帧解析结果（11 路数值）+ 脏标志。
  * ble_data_callback 在 ble_manager_process_data 内被调用（主任务上下文），
@@ -72,6 +73,10 @@ void setup()
     ui_init();
     Serial.println("[STEP 4] UI initialized");
 
+    Serial.println("[STEP 5] Initializing PWM outputs...");
+    pwm_manager_init();
+    Serial.println("[STEP 5] PWM outputs initialized");
+
     Serial.println("========================================");
     Serial.println("  System Ready!");
     Serial.println("========================================");
@@ -83,11 +88,15 @@ void loop()
     /* 处理 BLE 接收队列 + 帧重组，触发 ble_data_callback */
     ble_manager_process_data();
 
-    /* 有新帧时统一刷新一次 UI（数值网格 + 原始帧） */
+    /* 有新帧时统一刷新一次 UI（数值网格 + 原始帧）+ 更新 PWM 输出 */
     if (s_data_dirty) {
         s_data_dirty = false;
         ui_update_data_values(s_latest_values, s_latest_value_count);
         ui_append_data((const uint8_t *)s_latest_raw, s_latest_raw_len);
+        /* PWM 屏：显示 CH1~CH5 输入值 + 对应输出脉宽 */
+        ui_update_pwm_values(s_latest_values, s_latest_value_count);
+        /* 用 CH1~CH5（索引 0~4）驱动 5 路 PWM 硬件输出 */
+        pwm_manager_update(s_latest_values, s_latest_value_count);
     }
 
     static ble_state_t last_state = BLE_STATE_IDLE;
