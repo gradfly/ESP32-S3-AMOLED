@@ -2,6 +2,7 @@
 #include "lcd_bsp.h"
 #include "lcd_config.h"
 #include "pwm_manager.h"
+#include "gesture_images.h"
 #include "esp_log.h"
 #include <string.h>
 
@@ -11,6 +12,15 @@ static lv_obj_t *s_screen_main = NULL;
 static lv_obj_t *s_screen_list = NULL;
 static lv_obj_t *s_screen_data = NULL;
 static lv_obj_t *s_screen_pwm = NULL;
+static lv_obj_t *s_screen_gesture = NULL;   /* 数字手势屏：12 格图片网格 */
+
+/* 手势屏状态：需在 gesture_swipe_to_main() 等早期定义的函数前声明 */
+#define GESTURE_COUNT 12
+static lv_obj_t *s_gesture_cells[GESTURE_COUNT] = {0};      /* 12 格子对象（点击匹配） */
+static lv_obj_t *s_gesture_name_labels[GESTURE_COUNT] = {0};/* 各格名称标签（选中改色） */
+static uint8_t   s_selected_gesture = 0xFF;              /* 当前选中手势索引，0xFF=无 */
+static lv_obj_t *s_gesture_status_label = NULL;   /* 顶部状态行 */
+static lv_obj_t *s_gesture_info_label   = NULL;   /* 底部信息行：6 路输出汇总 */
 
 static lv_obj_t *s_status_label = NULL;
 static lv_obj_t *s_scan_list = NULL;
@@ -43,11 +53,20 @@ static lv_obj_t *s_data_pwm_btn = NULL;
 static lv_obj_t *s_pwm_status_label = NULL;    /* 顶部状态行：阈值规则提示 */
 static lv_obj_t *s_pwm_info_label = NULL;      /* 底部信息行：5 路输出汇总 */
 typedef struct {
+    lv_obj_t *cell;     /* 格子容器（用于设置边框等样式 + 接收点击） */
     lv_obj_t *title;    /* "Ch1" */
     lv_obj_t *input;    /* 输入值 "1800" */
     lv_obj_t *output;   /* 输出 PWM "2000us" */
 } pwm_cell_t;
-static pwm_cell_t s_pwm_cells[PWM_CHANNEL_COUNT];
+static pwm_cell_t s_pwm_cells[PWM_CHANNEL_COUNT];   /* CH1~CH6（CH6 由 CH1 派生） */
+
+/* 急停按钮：开启后所有 CH 通道强制输出 1500us，再次点击恢复 */
+static lv_obj_t *s_estop_btn   = NULL;
+static lv_obj_t *s_estop_label = NULL;
+
+/* 最新一帧数据缓存：供 cell 点击回调立即刷新 PWM 硬件 + UI 使用 */
+static int16_t s_pwm_values_cache[BLE_DATA_VALUE_COUNT] = {0};
+static uint8_t s_pwm_count_cache = 0;
 
 static uint16_t s_selected_device = 0;
 static ble_device_info_t s_device_list[BLE_SCAN_RESULT_MAX];
@@ -60,10 +79,11 @@ static lv_style_t s_title_style;
 static lv_style_t s_list_item_selected_style;  /* 设备列表项选中样式：蓝底白字 */
 
 /* ====== 屏幕边缘滑动切换 ======
- * 仅对 主屏 / 数据屏 / PWM 屏 启用，线性顺序：Main <-> Data <-> PWM。
+ * 主屏 / 数据屏 / PWM 屏 线性顺序：Main <-> Data <-> PWM。
  * 左边缘起手右滑 -> 上一屏；右边缘起手左滑 -> 下一屏。
+ * 手势屏不在此线性顺序中：由主屏 "自主训练" 按钮进入，右边缘左滑返回主屏。
  * 按下需落在屏幕空白区域（非按钮/列表等子对象），否则手势事件不会到达屏幕。 */
-#define SWIPE_EDGE_WIDTH    30      /* 距左右边缘 30px 内起手才算边缘滑动 */
+#define SWIPE_EDGE_WIDTH    80      /* 距左右边缘 80px 内起手才算边缘滑动 */
 #define SWIPE_ANIM_MS       300     /* 切屏滑动动画时长 */
 #define SWIPE_DEBOUNCE_MS   400     /* 防抖：两次滑动最小间隔（>动画时长） */
 static const ui_screen_t s_swipe_order[] = {UI_SCREEN_MAIN, UI_SCREEN_DATA, UI_SCREEN_PWM};
@@ -74,6 +94,7 @@ static bool       s_swipe_started  = false;
 static uint32_t   s_last_swipe_ms  = 0;
 
 static void event_scan_btn_cb(lv_event_t *e);
+static void event_train_btn_cb(lv_event_t *e);     /* 主屏 "自主训练" -> 手势屏 */
 static void event_connect_btn_cb(lv_event_t *e);
 static void event_disconnect_btn_cb(lv_event_t *e);
 static void event_back_btn_cb(lv_event_t *e);
@@ -86,17 +107,25 @@ static void event_uuid_field_click_cb(lv_event_t *e);
 static void event_pwm_btn_cb(lv_event_t *e);        /* 数据屏 -> PWM 屏 */
 static void event_pwm_back_btn_cb(lv_event_t *e);   /* PWM 屏 -> 数据屏 */
 static void event_clear_pwm_cb(lv_event_t *e);      /* PWM 屏 Clear 按钮 */
+static void event_pwm_cell_click_cb(lv_event_t *e); /* PWM 格子点击：切换手动覆盖 */
+static void event_estop_btn_cb(lv_event_t *e);      /* 急停按钮：切换全局急停 */
+static void event_gesture_cell_click_cb(lv_event_t *e); /* 手势格子点击：选中+输出 PWM */
 static void swipe_press_cb(lv_event_t *e);          /* 按下：记录起手坐标 */
 static void swipe_gesture_cb(lv_event_t *e);        /* 屏幕级手势：边缘+方向 -> 切屏 */
 static void swipe_zone_gesture_cb(lv_event_t *e);   /* 热区手势：边缘热区 -> 切屏 */
 static void swipe_do_switch(bool go_next);          /* 执行切屏（带动画+防抖） */
-static void setup_screen_swipe(lv_obj_t *screen);   /* 为屏幕绑定边缘滑动事件 */
+static void setup_screen_swipe(lv_obj_t *screen);   /* 为屏幕绑定边缘滑动事件（含热区） */
+static void setup_screen_swipe_base(lv_obj_t *screen); /* 仅屏幕级手势（无热区） */
+static void gesture_swipe_gesture_cb(lv_event_t *e);  /* 手势屏手势：右边缘左滑 -> 主屏 */
+static void setup_gesture_screen_swipe(lv_obj_t *screen); /* 手势屏屏幕级手势（无热区） */
+static void gesture_update_info_label(const uint16_t *us); /* 更新手势屏底部 6 路汇总 */
 
 static void create_main_screen(void);
 static void create_list_screen(void);
 static void create_data_screen(void);
 static void create_uuid_screen(void);
 static void create_pwm_screen(void);
+static void create_gesture_screen(void);
 
 /* ====== 边缘滑动切换屏幕：实现 ====== */
 
@@ -114,9 +143,10 @@ static void swipe_do_switch(bool go_next)
     for (int i = 0; i < (int)SWIPE_ORDER_LEN; i++) {
         lv_obj_t *scr = NULL;
         switch (s_swipe_order[i]) {
-        case UI_SCREEN_MAIN: scr = s_screen_main; break;
-        case UI_SCREEN_DATA: scr = s_screen_data; break;
-        case UI_SCREEN_PWM:  scr = s_screen_pwm;  break;
+        case UI_SCREEN_MAIN:    scr = s_screen_main;    break;
+        case UI_SCREEN_DATA:    scr = s_screen_data;    break;
+        case UI_SCREEN_PWM:     scr = s_screen_pwm;     break;
+        case UI_SCREEN_GESTURE: scr = s_screen_gesture; break;
         default: break;
         }
         if (scr == active) { cur_idx = i; break; }
@@ -128,9 +158,10 @@ static void swipe_do_switch(bool go_next)
 
     lv_obj_t *target_scr = NULL;
     switch (s_swipe_order[target_idx]) {
-    case UI_SCREEN_MAIN: target_scr = s_screen_main; break;
-    case UI_SCREEN_DATA: target_scr = s_screen_data; break;
-    case UI_SCREEN_PWM:  target_scr = s_screen_pwm;  break;
+    case UI_SCREEN_MAIN:    target_scr = s_screen_main;    break;
+    case UI_SCREEN_DATA:    target_scr = s_screen_data;    break;
+    case UI_SCREEN_PWM:     target_scr = s_screen_pwm;     break;
+    case UI_SCREEN_GESTURE: target_scr = s_screen_gesture; break;
     default: return;
     }
 
@@ -192,19 +223,27 @@ static void swipe_zone_gesture_cb(lv_event_t *e)
     }
 }
 
-/* 为屏幕绑定边缘滑动事件：
- * 1. 屏幕级 PRESSED+GESTURE（空白区域起手的滑动）
- * 2. 两个透明边缘热区覆盖在网格上方（网格区域起手的滑动）
- * 热区仅覆盖中部纵向区域（y=70~360），避开顶部按钮和底部按钮。 */
-static void setup_screen_swipe(lv_obj_t *screen)
+/* 为屏幕绑定屏幕级边缘滑动事件（不含透明热区）。
+ * 适用于格子本身已绑定 PRESSED+GESTURE 的屏幕（如 PWM 屏）。 */
+static void setup_screen_swipe_base(lv_obj_t *screen)
 {
     if (!screen) return;
-
-    /* 屏幕级手势：空白区域起手 */
     lv_obj_add_flag(screen, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_clear_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_event_cb(screen, swipe_press_cb, LV_EVENT_PRESSED, NULL);
     lv_obj_add_event_cb(screen, swipe_gesture_cb, LV_EVENT_GESTURE, NULL);
+}
+
+/* 为屏幕绑定边缘滑动事件：
+ * 1. 屏幕级 PRESSED+GESTURE（空白区域起手的滑动）
+ * 2. 两个透明边缘热区覆盖在网格上方（网格区域起手的滑动）
+ * 热区仅覆盖中部纵向区域（y=70~360），避开顶部按钮和底部按钮。
+ * 注意：热区会阻挡其覆盖区域内子对象的点击，故需要点击的屏幕（如 PWM 屏）
+ * 应使用 setup_screen_swipe_base() 并在格子自身绑定手势。 */
+static void setup_screen_swipe(lv_obj_t *screen)
+{
+    if (!screen) return;
+    setup_screen_swipe_base(screen);
 
     /* 透明边缘热区：覆盖网格区域，使边缘滑动在整屏均可触发 */
     lv_coord_t zone_y = 70;
@@ -229,6 +268,77 @@ static void setup_screen_swipe(lv_obj_t *screen)
     lv_obj_clear_flag(right_zone, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_user_data(right_zone, (void *)(intptr_t)1);  /* 1=右 */
     lv_obj_add_event_cb(right_zone, swipe_zone_gesture_cb, LV_EVENT_GESTURE, NULL);
+}
+
+/* ====== 手势屏专用边缘滑动（不在线性顺序中） ======
+ * 手势屏由主屏 "自主训练" 按钮进入，仅右边缘左滑返回主屏。
+ * 不复用 swipe_do_switch（手势屏不在 s_swipe_order 中，cur_idx 会<0）。
+ * 返回主屏前：6 路 PWM 输出回归姿势 1700/2000/2000/2000/2000/2000us。 */
+static const uint16_t s_gesture_rest_pose[PWM_CHANNEL_COUNT] = {1700,2000,2000,2000,2000,2000};
+
+static void gesture_swipe_to_main(void)
+{
+    /* 防抖：动画进行中不响应新滑动 */
+    uint32_t now = lv_tick_get();
+    if (now - s_last_swipe_ms < SWIPE_DEBOUNCE_MS) return;
+
+    /* 返回主屏前设置回归姿势（手势模式仍开启，立即刷新硬件） */
+    pwm_manager_set_gesture_outputs(s_gesture_rest_pose, PWM_CHANNEL_COUNT);
+
+    SemaphoreHandle_t mux = get_lvgl_mutex();
+    if (!mux) return;
+    if (xSemaphoreTakeRecursive(mux, pdMS_TO_TICKS(100)) != pdTRUE) return;
+
+    /* 更新手势屏底部汇总 + 清除选中高亮（下次进入为干净状态） */
+    if (s_gesture_info_label) {
+        char buf[64];
+        snprintf(buf, sizeof(buf), "输出脉宽: %u %u %u %u %u %u",
+                 s_gesture_rest_pose[0], s_gesture_rest_pose[1], s_gesture_rest_pose[2],
+                 s_gesture_rest_pose[3], s_gesture_rest_pose[4], s_gesture_rest_pose[5]);
+        lv_label_set_text(s_gesture_info_label, buf);
+    }
+    for (uint8_t i = 0; i < GESTURE_COUNT; i++) {
+        if (s_gesture_cells[i]) {
+            lv_obj_set_style_bg_color(s_gesture_cells[i], lv_color_hex(0xF2F2F7), 0);
+        }
+        if (s_gesture_name_labels[i]) {
+            lv_obj_set_style_text_color(s_gesture_name_labels[i], lv_color_hex(0x333333), 0);
+        }
+    }
+    s_selected_gesture = 0xFF;
+
+    lv_scr_load_anim(s_screen_main, LV_SCR_LOAD_ANIM_MOVE_LEFT, SWIPE_ANIM_MS, 0, false);
+    s_last_swipe_ms = now;
+
+    xSemaphoreGiveRecursive(mux);
+}
+
+/* 手势屏手势（屏幕级 + 格子级共用）：右边缘起手左滑 -> 返回主屏 */
+static void gesture_swipe_gesture_cb(lv_event_t *e)
+{
+    if (!s_swipe_started) return;
+    s_swipe_started = false;
+
+    lv_indev_t *indev = lv_indev_get_act();
+    if (!indev) return;
+    lv_dir_t dir = lv_indev_get_gesture_dir(indev);
+
+    if (s_swipe_start_pt.x > EXAMPLE_LCD_H_RES - SWIPE_EDGE_WIDTH &&
+        dir == LV_DIR_LEFT) {
+        gesture_swipe_to_main();   /* 右边缘左滑 -> 主屏 */
+    }
+}
+
+/* 为手势屏绑定屏幕级边缘滑动（无透明热区）。
+ * 手势格子需接收点击，热区会阻挡点击，故格子自身另绑 PRESSED+GESTURE
+ * （与 PWM 屏同模式），使右边缘左滑在格子区域也能触发返回主屏。 */
+static void setup_gesture_screen_swipe(lv_obj_t *screen)
+{
+    if (!screen) return;
+    lv_obj_add_flag(screen, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_clear_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_event_cb(screen, swipe_press_cb, LV_EVENT_PRESSED, NULL);
+    lv_obj_add_event_cb(screen, gesture_swipe_gesture_cb, LV_EVENT_GESTURE, NULL);
 }
 
 void ui_init(void)
@@ -268,11 +378,15 @@ void ui_init(void)
     create_data_screen();
     create_uuid_screen();
     create_pwm_screen();
+    create_gesture_screen();
 
-    /* 为主屏 / 数据屏 / PWM 屏绑定边缘滑动切换 */
+    /* 主屏 / 数据屏：含透明热区的完整边缘滑动（线性顺序 Main<->Data<->PWM） */
     setup_screen_swipe(s_screen_main);
     setup_screen_swipe(s_screen_data);
-    setup_screen_swipe(s_screen_pwm);
+    /* PWM 屏仅用屏幕级手势（无热区）：格子自身需接收点击，热区会阻挡点击 */
+    setup_screen_swipe_base(s_screen_pwm);
+    /* 手势屏不在线性顺序中：由主屏 "自主训练" 按钮进入，右边缘左滑返回主屏 */
+    setup_gesture_screen_swipe(s_screen_gesture);
 
     lv_scr_load(s_screen_main);
 }
@@ -284,22 +398,32 @@ static void create_main_screen(void)
     lv_obj_set_style_bg_color(s_screen_main, lv_color_hex(0xFFFFFF), 0);
 
     lv_obj_t *title = lv_label_create(s_screen_main);
-    lv_label_set_text(title, "BLE Serial");
+    lv_label_set_text(title, "选择模式");
     lv_obj_add_style(title, &s_title_style, 0);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 30);
 
+    /* "扫描设备"：进入 BLE 扫描列表 */
     s_scan_btn = lv_btn_create(s_screen_main);
     lv_obj_add_style(s_scan_btn, &s_btn_style, 0);
     lv_obj_set_size(s_scan_btn, 200, 50);
-    lv_obj_align(s_scan_btn, LV_ALIGN_CENTER, 0, -40);
+    lv_obj_align(s_scan_btn, LV_ALIGN_CENTER, 0, -50);
     lv_obj_t *scan_label = lv_label_create(s_scan_btn);
-    lv_label_set_text(scan_label, "Scan Devices");
+    lv_label_set_text(scan_label, "扫描设备");
     lv_obj_add_event_cb(s_scan_btn, event_scan_btn_cb, LV_EVENT_CLICKED, NULL);
 
+    /* "自主训练"：进入手势屏（无需 BLE 连接，离线浏览 12 个手势） */
+    lv_obj_t *train_btn = lv_btn_create(s_screen_main);
+    lv_obj_add_style(train_btn, &s_btn_style, 0);
+    lv_obj_set_size(train_btn, 200, 50);
+    lv_obj_align(train_btn, LV_ALIGN_CENTER, 0, 20);
+    lv_obj_t *train_label = lv_label_create(train_btn);
+    lv_label_set_text(train_label, "自主训练");
+    lv_obj_add_event_cb(train_btn, event_train_btn_cb, LV_EVENT_CLICKED, NULL);
+
     s_status_label = lv_label_create(s_screen_main);
-    lv_label_set_text(s_status_label, "Ready");
+    lv_label_set_text(s_status_label, "准备就绪");
     lv_obj_add_style(s_status_label, &s_label_style, 0);
-    lv_obj_align(s_status_label, LV_ALIGN_CENTER, 0, 30);
+    lv_obj_align(s_status_label, LV_ALIGN_CENTER, 0, 80);
 }
 
 static void create_list_screen(void)
@@ -309,7 +433,7 @@ static void create_list_screen(void)
     lv_obj_set_style_bg_color(s_screen_list, lv_color_hex(0xFFFFFF), 0);
 
     lv_obj_t *title = lv_label_create(s_screen_list);
-    lv_label_set_text(title, "Devices");
+    lv_label_set_text(title, "设备列表");
     lv_obj_add_style(title, &s_title_style, 0);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 20);
 
@@ -317,7 +441,7 @@ static void create_list_screen(void)
     lv_obj_set_size(back_btn, 60, 40);
     lv_obj_align(back_btn, LV_ALIGN_TOP_LEFT, 10, 15);
     lv_obj_t *back_label = lv_label_create(back_btn);
-    lv_label_set_text(back_label, "Back");
+    lv_label_set_text(back_label, "返回");
     lv_obj_add_event_cb(back_btn, event_back_btn_cb, LV_EVENT_CLICKED, NULL);
 
     s_scan_list = lv_list_create(s_screen_list);
@@ -329,7 +453,7 @@ static void create_list_screen(void)
     lv_obj_set_size(s_connect_btn, 200, 50);
     lv_obj_align(s_connect_btn, LV_ALIGN_BOTTOM_MID, 0, -20);
     lv_obj_t *connect_label = lv_label_create(s_connect_btn);
-    lv_label_set_text(connect_label, "Connect");
+    lv_label_set_text(connect_label, "连接");
     lv_obj_add_event_cb(s_connect_btn, event_connect_btn_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_add_flag(s_connect_btn, LV_OBJ_FLAG_HIDDEN);
 }
@@ -341,24 +465,24 @@ static void create_data_screen(void)
     lv_obj_set_style_bg_color(s_screen_data, lv_color_hex(0xFFFFFF), 0);
 
     lv_obj_t *title = lv_label_create(s_screen_data);
-    lv_label_set_text(title, "BLE Data");
+    lv_label_set_text(title, "BLE 数据");
     lv_obj_add_style(title, &s_title_style, 0);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 12);
 
     /* 左上角 Back 按钮已移除：改用屏幕边缘滑动切换（左边缘右滑 -> 主屏） */
     /* 右上角 "PWM" 按钮：跳转到 PWM 输出屏（也可右边缘左滑切到 PWM 屏） */
-    s_data_pwm_btn = lv_btn_create(s_screen_data);
-    lv_obj_add_style(s_data_pwm_btn, &s_btn_style, 0);
-    lv_obj_set_size(s_data_pwm_btn, 60, 38);
-    lv_obj_align(s_data_pwm_btn, LV_ALIGN_TOP_RIGHT, -8, 8);
-    lv_obj_t *pwm_jump_label = lv_label_create(s_data_pwm_btn);
-    lv_label_set_text(pwm_jump_label, "PWM");
-    lv_obj_center(pwm_jump_label);
-    lv_obj_add_event_cb(s_data_pwm_btn, event_pwm_btn_cb, LV_EVENT_CLICKED, NULL);
+    // s_data_pwm_btn = lv_btn_create(s_screen_data);
+    // lv_obj_add_style(s_data_pwm_btn, &s_btn_style, 0);
+    // lv_obj_set_size(s_data_pwm_btn, 60, 38);
+    // lv_obj_align(s_data_pwm_btn, LV_ALIGN_TOP_RIGHT, -8, 8);
+    // lv_obj_t *pwm_jump_label = lv_label_create(s_data_pwm_btn);
+    // lv_label_set_text(pwm_jump_label, "PWM");
+    // lv_obj_center(pwm_jump_label);
+    // lv_obj_add_event_cb(s_data_pwm_btn, event_pwm_btn_cb, LV_EVENT_CLICKED, NULL);
 
     /* 连接状态行：显示已连接的设备名 */
     s_data_status_label = lv_label_create(s_screen_data);
-    lv_label_set_text(s_data_status_label, "Connecting...");
+    lv_label_set_text(s_data_status_label, "连接中...");
     lv_obj_add_style(s_data_status_label, &s_label_style, 0);
     lv_obj_set_style_text_color(s_data_status_label, lv_color_hex(0x34C759), 0);
     lv_obj_align(s_data_status_label, LV_ALIGN_TOP_MID, 0, 52);
@@ -406,7 +530,7 @@ static void create_data_screen(void)
 
     /* 最新一帧原始数据（调试用，单行省略） */
     s_raw_label = lv_label_create(s_screen_data);
-    lv_label_set_text(s_raw_label, "Raw: --");
+    lv_label_set_text(s_raw_label, "原始数据：: --");
     lv_obj_add_style(s_raw_label, &s_label_style, 0);
     lv_obj_set_style_text_color(s_raw_label, lv_color_hex(0x8E8E93), 0);
     lv_obj_set_width(s_raw_label, EXAMPLE_LCD_H_RES - 16);
@@ -415,19 +539,19 @@ static void create_data_screen(void)
 
     s_disconnect_btn = lv_btn_create(s_screen_data);
     lv_obj_add_style(s_disconnect_btn, &s_btn_style, 0);
-    lv_obj_set_size(s_disconnect_btn, 130, 42);
+    lv_obj_set_size(s_disconnect_btn, 120, 42);
     lv_obj_align(s_disconnect_btn, LV_ALIGN_BOTTOM_LEFT, 10, -10);
     lv_obj_t *disconnect_label = lv_label_create(s_disconnect_btn);
-    lv_label_set_text(disconnect_label, "Disconnect");
+    lv_label_set_text(disconnect_label, "断开连接");
     lv_obj_add_event_cb(s_disconnect_btn, event_disconnect_btn_cb, LV_EVENT_CLICKED, NULL);
 
     lv_obj_t *clear_btn = lv_btn_create(s_screen_data);
     lv_obj_add_style(clear_btn, &s_btn_style, 0);
     lv_obj_set_style_bg_color(clear_btn, lv_color_hex(0x8E8E93), 0);
-    lv_obj_set_size(clear_btn, 90, 42);
+    lv_obj_set_size(clear_btn, 120, 42);
     lv_obj_align(clear_btn, LV_ALIGN_BOTTOM_RIGHT, -10, -10);
     lv_obj_t *clear_label = lv_label_create(clear_btn);
-    lv_label_set_text(clear_label, "Clear");
+    lv_label_set_text(clear_label, "清除数据");
     lv_obj_add_event_cb(clear_btn, event_clear_data_cb, LV_EVENT_CLICKED, NULL);
 }
 
@@ -441,7 +565,7 @@ static void create_pwm_screen(void)
     lv_obj_set_style_bg_color(s_screen_pwm, lv_color_hex(0xFFFFFF), 0);
 
     lv_obj_t *title = lv_label_create(s_screen_pwm);
-    lv_label_set_text(title, "PWM Output");
+    lv_label_set_text(title, "PWM 输出");
     lv_obj_add_style(title, &s_title_style, 0);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 12);
 
@@ -453,14 +577,15 @@ static void create_pwm_screen(void)
     // lv_label_set_text(back_label, "Back");
     // lv_obj_add_event_cb(back_btn, event_pwm_back_btn_cb, LV_EVENT_CLICKED, NULL);
 
-    /* 顶部状态行：阈值规则提示 */
+    /* 顶部状态行：阈值规则 + 点击覆盖提示 */
     s_pwm_status_label = lv_label_create(s_screen_pwm);
-    lv_label_set_text(s_pwm_status_label, "5ch  >1650 -> 2000us  else 1000us");
+    lv_label_set_text(s_pwm_status_label, ">1650->2000us  else 1000us  tap->1500us");
     lv_obj_add_style(s_pwm_status_label, &s_label_style, 0);
     lv_obj_set_style_text_color(s_pwm_status_label, lv_color_hex(0x8E8E93), 0);
     lv_obj_align(s_pwm_status_label, LV_ALIGN_TOP_MID, 0, 52);
 
-    /* 5 路网格：2 列手动定位（与数据屏 11 通道网格同尺寸同间距） */
+    /* 6 格网格：2 列手动定位（CH1~CH5 硬件通道 + CH6 显示镜像）。
+     * 与数据屏 11 通道网格同尺寸同间距。 */
     lv_obj_t *grid = lv_obj_create(s_screen_pwm);
     lv_obj_set_size(grid, EXAMPLE_LCD_H_RES - 12, 282);
     lv_obj_align(grid, LV_ALIGN_TOP_MID, 0, 76);
@@ -468,10 +593,12 @@ static void create_pwm_screen(void)
     lv_obj_set_style_border_width(grid, 0, 0);
     lv_obj_set_style_bg_opa(grid, LV_OPA_TRANSP, 0);
     lv_obj_set_scrollbar_mode(grid, LV_SCROLLBAR_MODE_OFF);
+    /* 网格本身不拦截点击：空白区/CH6 的按压透传到屏幕，便于边缘滑动切屏 */
+    lv_obj_clear_flag(grid, LV_OBJ_FLAG_CLICKABLE);
 
     for (uint8_t i = 0; i < PWM_CHANNEL_COUNT; i++) {
         uint8_t col = i % 2;       /* 0=左列, 1=右列 */
-        uint8_t row = i / 2;       /* 0..2（第 3 行仅 CH5） */
+        uint8_t row = i / 2;       /* 0..2（第 3 行：CH5 左、CH6 右） */
         lv_coord_t x = col ? 136 : 4;
         lv_coord_t y = 4 + row * 46;
 
@@ -483,6 +610,12 @@ static void create_pwm_screen(void)
         lv_obj_set_style_pad_all(cell, 3, 0);
         lv_obj_set_style_border_width(cell, 0, 0);
         lv_obj_clear_flag(cell, LV_OBJ_FLAG_SCROLLABLE);
+        /* 格子可点击：点击切换手动覆盖（输出 1500us） */
+        lv_obj_add_flag(cell, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_add_event_cb(cell, event_pwm_cell_click_cb, LV_EVENT_CLICKED, NULL);
+        /* 格子也接收 PRESSED+GESTURE：使边缘滑动在格子区域也能触发切屏 */
+        lv_obj_add_event_cb(cell, swipe_press_cb, LV_EVENT_PRESSED, NULL);
+        lv_obj_add_event_cb(cell, swipe_gesture_cb, LV_EVENT_GESTURE, NULL);
 
         /* 左上：通道名 "Ch1" */
         lv_obj_t *t = lv_label_create(cell);
@@ -491,28 +624,45 @@ static void create_pwm_screen(void)
         lv_obj_set_style_text_color(t, lv_color_hex(0x8E8E93), 0);
         lv_obj_align(t, LV_ALIGN_TOP_LEFT, 4, 2);
 
-        /* 右上：输入值 "1800"（来自 BLE 帧 CH1~CH5） */
+        /* 右上：输入值（CH1~CH5 取自身 BLE 值；CH6 取 CH1 输入值） */
         lv_obj_t *in_lbl = lv_label_create(cell);
         lv_label_set_text(in_lbl, "----");
         lv_obj_set_style_text_font(in_lbl, &lv_font_montserrat_12, 0);
         lv_obj_set_style_text_color(in_lbl, lv_color_hex(0x8E8E93), 0);
         lv_obj_align(in_lbl, LV_ALIGN_TOP_RIGHT, -4, 2);
 
-        /* 右下：输出 PWM "2000us"（2000 绿色 / 1000 灰色，即时区分） */
+        /* 右下：输出 PWM（CH1~5: 2000绿/1000蓝; CH6: 1750绿/1400蓝; 1500灰） */
         lv_obj_t *out_lbl = lv_label_create(cell);
         lv_label_set_text(out_lbl, "----");
         lv_obj_set_style_text_font(out_lbl, &lv_font_montserrat_20, 0);
         lv_obj_set_style_text_color(out_lbl, lv_color_hex(0x8E8E93), 0);
         lv_obj_align(out_lbl, LV_ALIGN_BOTTOM_RIGHT, -4, -2);
 
+        s_pwm_cells[i].cell   = cell;
         s_pwm_cells[i].title  = t;
         s_pwm_cells[i].input  = in_lbl;
         s_pwm_cells[i].output = out_lbl;
     }
 
-    /* 底部信息行：5 路输出脉宽汇总（一眼看出哪些通道为高） */
+    /* 急停按钮：CH5/CH6 下方区域（网格内第 4 行）。
+     * 点击切换全局急停：开启 -> 所有 CH 通道强制 1500us；再次点击 -> 恢复。 */
+    s_estop_btn = lv_btn_create(grid);
+    lv_obj_set_pos(s_estop_btn, 4, 150);          /* row2(y=138) 下方留 12px */
+    lv_obj_set_size(s_estop_btn, 256, 70);
+    lv_obj_set_style_bg_color(s_estop_btn, lv_color_hex(0xFF3B30), 0);
+    lv_obj_set_style_radius(s_estop_btn, 10, 0);
+    lv_obj_set_style_shadow_width(s_estop_btn, 0, 0);
+    lv_obj_set_style_pad_all(s_estop_btn, 0, 0);
+    s_estop_label = lv_label_create(s_estop_btn);
+    lv_label_set_text(s_estop_label, "急停");
+    lv_obj_set_style_text_font(s_estop_label, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_color(s_estop_label, lv_color_white(), 0);
+    lv_obj_center(s_estop_label);
+    lv_obj_add_event_cb(s_estop_btn, event_estop_btn_cb, LV_EVENT_CLICKED, NULL);
+
+    /* 底部信息行：6 路输出脉宽汇总（一眼看出哪些通道为高） */
     s_pwm_info_label = lv_label_create(s_screen_pwm);
-    lv_label_set_text(s_pwm_info_label, "Out: ---- ---- ---- ---- ----");
+    lv_label_set_text(s_pwm_info_label, "输出脉宽: ---- ---- ---- ---- ---- ----");
     lv_obj_add_style(s_pwm_info_label, &s_label_style, 0);
     lv_obj_set_style_text_color(s_pwm_info_label, lv_color_hex(0x333333), 0);
     lv_obj_set_width(s_pwm_info_label, EXAMPLE_LCD_H_RES - 16);
@@ -522,20 +672,142 @@ static void create_pwm_screen(void)
     /* 底部按钮：Disconnect（复用） + Clear（清空 PWM 显示） */
     lv_obj_t *disconnect_btn = lv_btn_create(s_screen_pwm);
     lv_obj_add_style(disconnect_btn, &s_btn_style, 0);
-    lv_obj_set_size(disconnect_btn, 130, 42);
+    lv_obj_set_size(disconnect_btn, 120, 42);
     lv_obj_align(disconnect_btn, LV_ALIGN_BOTTOM_LEFT, 10, -10);
     lv_obj_t *disconnect_label = lv_label_create(disconnect_btn);
-    lv_label_set_text(disconnect_label, "Disconnect");
+    lv_label_set_text(disconnect_label, "断开连接");
     lv_obj_add_event_cb(disconnect_btn, event_disconnect_btn_cb, LV_EVENT_CLICKED, NULL);
 
     lv_obj_t *clear_btn = lv_btn_create(s_screen_pwm);
     lv_obj_add_style(clear_btn, &s_btn_style, 0);
     lv_obj_set_style_bg_color(clear_btn, lv_color_hex(0x8E8E93), 0);
-    lv_obj_set_size(clear_btn, 90, 42);
+    lv_obj_set_size(clear_btn, 120, 42);
     lv_obj_align(clear_btn, LV_ALIGN_BOTTOM_RIGHT, -10, -10);
     lv_obj_t *clear_label = lv_label_create(clear_btn);
-    lv_label_set_text(clear_label, "Clear");
+    lv_label_set_text(clear_label, "清空输出");
     lv_obj_add_event_cb(clear_btn, event_clear_pwm_cb, LV_EVENT_CLICKED, NULL);
+}
+
+/* 数字手势屏：布局与 PWM 屏一致（标题 + 状态行 + 2 列网格 + 底部信息行）。
+ * 12 格网格（2 列 x 6 行），每格左侧放手势图片（36x36），右侧放图片名称文字。
+ * 图片顺序：1、2、3、4、5、6、7、8、10、ok、good、love。
+ * 格子可点击：点击设置 6 路 PWM 输出（互斥，选中格蓝底）。
+ * 由主屏 "自主训练" 按钮进入（开启手势模式），右边缘左滑返回主屏（输出回归姿势）。
+ * 注：GESTURE_COUNT / s_gesture_cells / s_selected_gesture / s_gesture_*_label
+ *     已在文件顶部声明（供 gesture_swipe_to_main 等早期函数使用）。 */
+typedef struct {
+    const lv_img_dsc_t *img;   /* 手势图片描述符 */
+    const char         *name;  /* 图片名称文字 */
+    uint16_t            pwm[PWM_CHANNEL_COUNT];  /* 点击该手势时 6 路输出脉宽(us) */
+} gesture_entry_t;
+static const gesture_entry_t s_gestures[GESTURE_COUNT] = {
+    { &img_gesture_1,    "1",    {1450,1000,1000,1000,1000,1000} },
+    { &img_gesture_2,    "2",    {1450,1000,2000,2000,1000,1000} },
+    { &img_gesture_3,    "3",    {1450,1000,2000,2000,2000,1000} },
+    { &img_gesture_4,    "4",    {1450,1000,2000,2000,2000,2000} },
+    { &img_gesture_5,    "5",    {1700,2000,2000,2000,2000,2000} },
+    { &img_gesture_6,    "6",    {1700,2000,1000,1000,1000,2000} },
+    { &img_gesture_7,    "7",    {1700,2000,2000,2000,1000,1000} },
+    { &img_gesture_8,    "8",    {1700,2000,2000,1000,1000,1000} },
+    { &img_gesture_10,   "10",   {1450,1000,1000,1000,1000,1000} },
+    { &img_gesture_ok,   "ok",   {1450,1000,1000,1000,1000,1000} },
+    { &img_gesture_good, "good", {1450,1000,1000,2000,2000,2000} },
+    { &img_gesture_love, "love", {1700,2000,2000,1000,1000,2000} },
+};
+
+static void create_gesture_screen(void)
+{
+    s_screen_gesture = lv_obj_create(NULL);
+    lv_obj_set_size(s_screen_gesture, EXAMPLE_LCD_H_RES, EXAMPLE_LCD_V_RES);
+    lv_obj_set_style_bg_color(s_screen_gesture, lv_color_hex(0xFFFFFF), 0);
+
+    lv_obj_t *title = lv_label_create(s_screen_gesture);
+    lv_label_set_text(title, "手势");
+    lv_obj_add_style(title, &s_title_style, 0);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 12);
+
+    /* 顶部状态行：手势总数提示 */
+    s_gesture_status_label = lv_label_create(s_screen_gesture);
+    lv_label_set_text(s_gesture_status_label, "共 12 个手势");
+    lv_obj_add_style(s_gesture_status_label, &s_label_style, 0);
+    lv_obj_set_style_text_color(s_gesture_status_label, lv_color_hex(0x8E8E93), 0);
+    lv_obj_align(s_gesture_status_label, LV_ALIGN_TOP_MID, 0, 52);
+
+    /* 12 格网格：2 列手动定位，与 PWM 屏同尺寸同间距（cell 124x42, 间距 46）。
+     * 6 行需 grid 高度 284（4 + 5*46 + 42 + 4 = 284）以完整容纳。 */
+    lv_obj_t *grid = lv_obj_create(s_screen_gesture);
+    lv_obj_set_size(grid, EXAMPLE_LCD_H_RES - 12, 284);
+    lv_obj_align(grid, LV_ALIGN_TOP_MID, 0, 76);
+    lv_obj_set_style_pad_all(grid, 4, 0);
+    lv_obj_set_style_border_width(grid, 0, 0);
+    lv_obj_set_style_bg_opa(grid, LV_OPA_TRANSP, 0);
+    lv_obj_set_scrollbar_mode(grid, LV_SCROLLBAR_MODE_OFF);
+    /* 网格不拦截点击：空白区按压透传到屏幕，便于边缘滑动切屏 */
+    lv_obj_clear_flag(grid, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+
+    for (uint8_t i = 0; i < GESTURE_COUNT; i++) {
+        uint8_t col = i % 2;       /* 0=左列, 1=右列 */
+        uint8_t row = i / 2;       /* 0..5 */
+        lv_coord_t x = col ? 136 : 4;
+        lv_coord_t y = 4 + row * 46;
+
+        lv_obj_t *cell = lv_obj_create(grid);
+        lv_obj_set_pos(cell, x, y);
+        lv_obj_set_size(cell, 124, 42);
+        lv_obj_set_style_bg_color(cell, lv_color_hex(0xF2F2F7), 0);
+        lv_obj_set_style_radius(cell, 6, 0);
+        lv_obj_set_style_pad_all(cell, 3, 0);
+        lv_obj_set_style_border_width(cell, 0, 0);
+        lv_obj_clear_flag(cell, LV_OBJ_FLAG_SCROLLABLE);
+        /* 格子可点击：点击选中该手势并输出对应 6 路 PWM */
+        lv_obj_add_flag(cell, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_add_event_cb(cell, event_gesture_cell_click_cb, LV_EVENT_CLICKED, NULL);
+        /* 格子也接收 PRESSED+GESTURE：使右边缘左滑在格子区域也能触发返回主屏 */
+        lv_obj_add_event_cb(cell, swipe_press_cb, LV_EVENT_PRESSED, NULL);
+        lv_obj_add_event_cb(cell, gesture_swipe_gesture_cb, LV_EVENT_GESTURE, NULL);
+
+        /* 左侧：手势图片（36x36） */
+        lv_obj_t *img = lv_img_create(cell);
+        lv_img_set_src(img, s_gestures[i].img);
+        lv_obj_align(img, LV_ALIGN_LEFT_MID, 2, 0);
+
+        /* 右侧：图片名称文字 */
+        lv_obj_t *name = lv_label_create(cell);
+        lv_label_set_text(name, s_gestures[i].name);
+        lv_obj_set_style_text_font(name, &lv_font_montserrat_16, 0);
+        lv_obj_set_style_text_color(name, lv_color_hex(0x333333), 0);
+        lv_obj_align(name, LV_ALIGN_LEFT_MID, 44, 0);
+
+        s_gesture_cells[i] = cell;            /* 保存指针供点击回调匹配 + 选中高亮 */
+        s_gesture_name_labels[i] = name;      /* 保存名称标签供选中时改色 */
+    }
+
+    /* 底部信息行：6 路输出脉宽汇总（与 PWM 屏汇总行同格式同位置） */
+    s_gesture_info_label = lv_label_create(s_screen_gesture);
+    lv_label_set_text(s_gesture_info_label, "输出脉宽: ---- ---- ---- ---- ---- ----");
+    lv_obj_add_style(s_gesture_info_label, &s_label_style, 0);
+    lv_obj_set_style_text_color(s_gesture_info_label, lv_color_hex(0x333333), 0);
+    lv_obj_set_width(s_gesture_info_label, EXAMPLE_LCD_H_RES - 16);
+    lv_label_set_long_mode(s_gesture_info_label, LV_LABEL_LONG_DOT);
+    lv_obj_align(s_gesture_info_label, LV_ALIGN_TOP_MID, 0, 368);
+}
+
+/* 更新手势屏底部信息行：6 路输出脉宽汇总 */
+static void gesture_update_info_label(const uint16_t *us)
+{
+    if (!us) return;
+    SemaphoreHandle_t mux = get_lvgl_mutex();
+    if (!mux) return;
+    if (xSemaphoreTakeRecursive(mux, pdMS_TO_TICKS(100)) != pdTRUE) return;
+
+    if (s_gesture_info_label) {
+        char buf[64];
+        snprintf(buf, sizeof(buf), "输出脉宽: %u %u %u %u %u %u",
+                 us[0], us[1], us[2], us[3], us[4], us[5]);
+        lv_label_set_text(s_gesture_info_label, buf);
+    }
+
+    xSemaphoreGiveRecursive(mux);
 }
 
 /* UUID 设置屏：连接前让用户设置 服务/通知/写 UUID。
@@ -549,13 +821,13 @@ static void create_uuid_screen(void)
     lv_obj_set_style_pad_all(s_screen_uuid, 8, 0);
 
     lv_obj_t *title = lv_label_create(s_screen_uuid);
-    lv_label_set_text(title, "UUID Settings");
+    lv_label_set_text(title, "UUID 设置");
     lv_obj_add_style(title, &s_title_style, 0);
     lv_obj_set_style_text_font(title, &lv_font_montserrat_18, 0);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 0);
 
     /* 3 个 UUID 字段：标签 + 单行 textarea，最大 8 字符（16/32 位 hex） */
-    static const char *labels[3]   = {"Service", "Notify", "Write"};
+    static const char *labels[3]   = {"服务", "通知", "特征"};
     /* 目标手机 GATT（nRF Connect 实测）：
      *   Service: 0000FFF0-0000-1000-8000-00805F9B34FB
      *   Notify : 0000FFF1-0000-1000-8000-00805F9B34FB
@@ -616,7 +888,7 @@ static void create_uuid_screen(void)
     lv_obj_set_size(cancel_btn, half_w, 44);
     lv_obj_set_pos(cancel_btn, 0, 372);
     lv_obj_t *cancel_lbl = lv_label_create(cancel_btn);
-    lv_label_set_text(cancel_lbl, "Cancel");
+    lv_label_set_text(cancel_lbl, "取消");
     lv_obj_center(cancel_lbl);
     lv_obj_add_event_cb(cancel_btn, event_uuid_cancel_cb, LV_EVENT_CLICKED, NULL);
 
@@ -625,7 +897,7 @@ static void create_uuid_screen(void)
     lv_obj_set_size(connect_btn, half_w, 44);
     lv_obj_set_pos(connect_btn, half_w + 8, 372);
     lv_obj_t *connect_lbl = lv_label_create(connect_btn);
-    lv_label_set_text(connect_lbl, "Connect");
+    lv_label_set_text(connect_lbl, "连接");
     lv_obj_center(connect_lbl);
     lv_obj_add_event_cb(connect_btn, event_uuid_connect_cb, LV_EVENT_CLICKED, NULL);
 }
@@ -698,7 +970,7 @@ static void event_uuid_connect_cb(lv_event_t *e)
 
     /* 切到数据屏显示 "Connecting..."，再发起连接（connect_task 异步执行） */
     if (s_data_status_label) {
-        lv_label_set_text(s_data_status_label, "Connecting...");
+        lv_label_set_text(s_data_status_label, "连接中...");
     }
     ui_switch_screen(UI_SCREEN_DATA);
     ble_manager_connect(&s_device_list[s_selected_device], &uuids);
@@ -727,6 +999,9 @@ void ui_switch_screen(ui_screen_t screen)
     case UI_SCREEN_PWM:
         lv_scr_load(s_screen_pwm);
         break;
+    case UI_SCREEN_GESTURE:
+        lv_scr_load(s_screen_gesture);
+        break;
     }
 
     xSemaphoreGiveRecursive(mux);
@@ -747,27 +1022,27 @@ void ui_update_state(ble_state_t state, const char *message)
     case BLE_STATE_SCANNING:
         if (s_scan_btn) {
             lv_obj_t *lbl = lv_obj_get_child(s_scan_btn, 0);
-            if (lbl) lv_label_set_text(lbl, "Scanning...");
+            if (lbl) lv_label_set_text(lbl, "扫描中...");
             lv_obj_add_state(s_scan_btn, LV_STATE_DISABLED);
         }
         break;
     case BLE_STATE_IDLE:
         if (s_scan_btn) {
             lv_obj_t *lbl = lv_obj_get_child(s_scan_btn, 0);
-            if (lbl) lv_label_set_text(lbl, "Scan Devices");
+            if (lbl) lv_label_set_text(lbl, "扫描设备");
             lv_obj_clear_state(s_scan_btn, LV_STATE_DISABLED);
         }
         break;
     case BLE_STATE_CONNECTING:
         if (s_data_status_label) {
-            lv_label_set_text(s_data_status_label, "Connecting...");
+            lv_label_set_text(s_data_status_label, "连接中...");
         }
         break;
     case BLE_STATE_CONNECTED:
         if (s_data_status_label) {
             char buf[48];
-            snprintf(buf, sizeof(buf), "Connected: %s",
-                     s_connected_name[0] ? s_connected_name : "device");
+            snprintf(buf, sizeof(buf), "已连接到: %s",
+                             s_connected_name[0] ? s_connected_name : "设备");
             lv_label_set_text(s_data_status_label, buf);
         }
         ui_clear_data();
@@ -777,7 +1052,7 @@ void ui_update_state(ble_state_t state, const char *message)
     case BLE_STATE_DISCONNECTED:
         s_connected_name[0] = '\0';
         if (s_data_status_label) {
-            lv_label_set_text(s_data_status_label, "Disconnected");
+            lv_label_set_text(s_data_status_label, "已断开");
         }
         ui_clear_pwm();
         ui_switch_screen(UI_SCREEN_MAIN);
@@ -862,9 +1137,9 @@ void ui_append_data(const uint8_t *data, uint16_t len)
     if (s_raw_label && len > 0) {
         char buf[128];
         uint16_t copy_len = (len < sizeof(buf) - 8) ? len : sizeof(buf) - 8;
-        memcpy(buf, "Raw: ", 5);
-        memcpy(buf + 5, data, copy_len);
-        buf[5 + copy_len] = '\0';
+        memcpy(buf, "原始数据: ", 10);
+        memcpy(buf + 10, data, copy_len);
+        buf[10 + copy_len] = '\0';
         lv_label_set_text(s_raw_label, buf);
     }
 
@@ -901,7 +1176,7 @@ void ui_clear_data(void)
         }
     }
     if (s_raw_label) {
-        lv_label_set_text(s_raw_label, "Raw: --");
+        lv_label_set_text(s_raw_label, "原始数据: --");
     }
 
     xSemaphoreGiveRecursive(mux);
@@ -914,37 +1189,104 @@ void ui_update_pwm_values(const int16_t *values, uint8_t count)
 
     if (xSemaphoreTakeRecursive(mux, pdMS_TO_TICKS(100)) != pdTRUE) return;
 
-    /* 取前 5 路（CH1~CH5）。count 不足 5 时仅更新可用部分。 */
-    uint8_t n = (count < PWM_CHANNEL_COUNT) ? count : PWM_CHANNEL_COUNT;
+    /* 缓存最新数据，供 cell 点击回调立即刷新使用 */
+    s_pwm_count_cache = (count < BLE_DATA_VALUE_COUNT) ? count : BLE_DATA_VALUE_COUNT;
+    if (values && s_pwm_count_cache > 0) {
+        memcpy(s_pwm_values_cache, values, s_pwm_count_cache * sizeof(int16_t));
+    }
 
-    /* 底部汇总行的 5 段输出脉宽 */
-    char summary[48] = "Out:";
-    uint8_t summary_len = 4;
+    /* CH1~CH5 需要 count>=5 才有自身输入；CH6 输入取 CH1 值（需 count>=1） */
+    uint8_t n = (s_pwm_count_cache < PWM_DIRECT_CH_COUNT) ? s_pwm_count_cache : PWM_DIRECT_CH_COUNT;
+    bool has_ch1 = (s_pwm_count_cache >= 1);
+
+    /* 全局急停：开启时所有通道显示并输出 1500us */
+    bool estop = pwm_manager_get_estop();
+
+    /* 底部汇总行的 6 段输出脉宽 */
+    char summary[56] = "输出脉宽:";
+    uint8_t summary_len = 6;
 
     for (uint8_t i = 0; i < PWM_CHANNEL_COUNT; i++) {
-        if (i < n) {
-            int16_t v = values[i];
-            uint16_t us = (v > PWM_VALUE_THRESHOLD) ? PWM_OUT_HIGH_US : PWM_OUT_LOW_US;
+        bool ovr = pwm_manager_get_override(i);
+        bool is_ch6 = (i >= PWM_DIRECT_CH_COUNT);   /* index 5 == CH6 */
 
-            /* 输入值：4 位零填充，与数据屏格式一致 */
-            if (s_pwm_cells[i].input) {
-                lv_label_set_text_fmt(s_pwm_cells[i].input, "%04d", v);
+        /* 输入值显示：CH1~CH5 取自身 BLE 值；CH6 取 CH1 输入值 */
+        if (s_pwm_cells[i].input) {
+            if (is_ch6) {
+                if (has_ch1) {
+                    lv_label_set_text_fmt(s_pwm_cells[i].input, "%04d", s_pwm_values_cache[0]);
+                } else {
+                    lv_label_set_text(s_pwm_cells[i].input, "----");
+                }
+            } else if (i < n) {
+                lv_label_set_text_fmt(s_pwm_cells[i].input, "%04d", s_pwm_values_cache[i]);
             }
-            /* 输出 PWM：2000 绿色 / 1000 灰色，颜色即时区分高低状态 */
-            if (s_pwm_cells[i].output) {
+        }
+
+        /* 输出脉宽：急停 > 单通道覆盖 > 自动跟随 CH 值 */
+        uint16_t us;
+        bool show_value;
+        if (estop) {
+            us = PWM_OUT_MID_US;                 /* 急停 -> 1500us */
+            show_value = true;
+        } else if (ovr) {
+            us = PWM_OUT_MID_US;                 /* 覆盖 -> 1500us */
+            show_value = true;
+        } else if (is_ch6) {
+            /* CH6：由 CH1 输入值派生（基于输入值，点击 CH1 覆盖不影响 CH6） */
+            if (has_ch1) {
+                int16_t v0 = s_pwm_values_cache[0];
+                us = (v0 > PWM_VALUE_THRESHOLD) ? PWM_OUT_CH6_HIGH_US : PWM_OUT_CH6_LOW_US;
+                show_value = true;
+            } else {
+                us = 0;
+                show_value = false;
+            }
+        } else if (i < n) {
+            int16_t v = s_pwm_values_cache[i];
+            us = (v > PWM_VALUE_THRESHOLD) ? PWM_OUT_HIGH_US : PWM_OUT_LOW_US;
+            show_value = true;
+        } else {
+            us = 0;                              /* 无数据且未覆盖 */
+            show_value = false;
+        }
+
+        /* 输出 PWM 文字 + 颜色：2000/1750 绿 / 1000/1400 蓝 / 1500 灰 */
+        if (s_pwm_cells[i].output) {
+            if (show_value) {
                 lv_label_set_text_fmt(s_pwm_cells[i].output, "%uus", us);
-                lv_obj_set_style_text_color(
-                    s_pwm_cells[i].output,
-                    (us == PWM_OUT_HIGH_US) ? lv_color_hex(0x34C759)
-                                            : lv_color_hex(0x8E8E93),
-                    0);
+                lv_color_t color;
+                if (us == PWM_OUT_HIGH_US || us == PWM_OUT_CH6_HIGH_US)
+                    color = lv_color_hex(0x34C759);   /* 绿 */
+                else if (us == PWM_OUT_LOW_US || us == PWM_OUT_CH6_LOW_US)
+                    color = lv_color_hex(0x007AFF);   /* 蓝 */
+                else
+                    color = lv_color_hex(0x8E8E93);   /* 灰(1500) */
+                lv_obj_set_style_text_color(s_pwm_cells[i].output, color, 0);
+            } else {
+                lv_label_set_text(s_pwm_cells[i].output, "----");
+                lv_obj_set_style_text_color(s_pwm_cells[i].output,
+                                            lv_color_hex(0x8E8E93), 0);
             }
-            /* 追加到底部汇总：如 " 2000" */
+        }
+
+        /* 覆盖状态：蓝色边框高亮（急停时不显示单通道覆盖边框） */
+        if (s_pwm_cells[i].cell) {
+            if (ovr && !estop) {
+                lv_obj_set_style_border_color(s_pwm_cells[i].cell,
+                                              lv_color_hex(0x007AFF), 0);
+                lv_obj_set_style_border_width(s_pwm_cells[i].cell, 2, 0);
+            } else {
+                lv_obj_set_style_border_width(s_pwm_cells[i].cell, 0, 0);
+            }
+        }
+
+        /* 追加到底部汇总 */
+        if (show_value) {
             int remain = (int)sizeof(summary) - (int)summary_len;
             int w = snprintf(summary + summary_len, remain, " %u", us);
             if (w > 0) summary_len += w;
         } else {
-            /* 数据不足：该路保持 "----" */
             int remain = (int)sizeof(summary) - (int)summary_len;
             int w = snprintf(summary + summary_len, remain, " ----");
             if (w > 0) summary_len += w;
@@ -953,6 +1295,21 @@ void ui_update_pwm_values(const int16_t *values, uint8_t count)
 
     if (s_pwm_info_label) {
         lv_label_set_text(s_pwm_info_label, summary);
+    }
+
+    /* 急停按钮文字 + 样式：OFF -> "急停"(亮红) / ON -> "恢复"(深红+黄边) */
+    if (s_estop_label) {
+        lv_label_set_text(s_estop_label, estop ? "恢复" : "急停"); 
+    }
+    if (s_estop_btn) {
+        if (estop) {
+            lv_obj_set_style_bg_color(s_estop_btn, lv_color_hex(0xB71C1C), 0);
+            lv_obj_set_style_border_color(s_estop_btn, lv_color_hex(0xFFEB3B), 0);
+            lv_obj_set_style_border_width(s_estop_btn, 3, 0);
+        } else {
+            lv_obj_set_style_bg_color(s_estop_btn, lv_color_hex(0xFF3B30), 0);
+            lv_obj_set_style_border_width(s_estop_btn, 0, 0);
+        }
     }
 
     xSemaphoreGiveRecursive(mux);
@@ -974,9 +1331,17 @@ void ui_clear_pwm(void)
             lv_obj_set_style_text_color(s_pwm_cells[i].output,
                                         lv_color_hex(0x8E8E93), 0);
         }
+        /* 清除覆盖边框（但不清除覆盖状态本身——状态由 pwm_manager 维护） */
+        if (s_pwm_cells[i].cell) {
+            lv_obj_set_style_border_width(s_pwm_cells[i].cell, 0, 0);
+        }
     }
     if (s_pwm_info_label) {
-        lv_label_set_text(s_pwm_info_label, "Out: ---- ---- ---- ---- ----");
+        lv_label_set_text(s_pwm_info_label, "输出脉宽: ---- ---- ---- ---- ---- ----");
+    }
+    /* 急停按钮文字复位（不影响急停状态本身——状态由 pwm_manager 维护） */
+    if (s_estop_label) {
+        lv_label_set_text(s_estop_label, pwm_manager_get_estop() ? "恢复" : "急停"); 
     }
 
     xSemaphoreGiveRecursive(mux);
@@ -984,8 +1349,57 @@ void ui_clear_pwm(void)
 
 static void event_scan_btn_cb(lv_event_t *e)
 {
+    /* 恢复 BLE 驱动模式：关闭手势模式，PWM 重新跟随 BLE 输入 */
+    pwm_manager_set_gesture_mode(false);
     ui_switch_screen(UI_SCREEN_LIST);
     ble_manager_start_scan();
+}
+
+/* 主屏 "自主训练" 按钮：开启手势模式（直接指定 PWM 输出，忽略 BLE），
+ * 切换到手势屏。手势模式下点击网格设置 6 路 PWM，右边缘左滑返回主屏。 */
+static void event_train_btn_cb(lv_event_t *e)
+{
+    pwm_manager_set_gesture_mode(true);
+    ui_switch_screen(UI_SCREEN_GESTURE);
+}
+
+/* 手势格子点击：选中该手势（互斥蓝底白字），设置对应 6 路 PWM 输出，
+ * 更新底部 6 路汇总。12 格互斥，同一时刻仅 1 格高亮。 */
+static void event_gesture_cell_click_cb(lv_event_t *e)
+{
+    lv_obj_t *clicked = lv_event_get_current_target(e);
+    if (!clicked) return;
+
+    /* 通过指针匹配确定点击的是哪个手势格子 */
+    uint8_t idx;
+    for (idx = 0; idx < GESTURE_COUNT; idx++) {
+        if (s_gesture_cells[idx] == clicked) break;
+    }
+    if (idx >= GESTURE_COUNT) return;
+
+    /* 设置 6 路 PWM 输出（手势模式已开启，立即刷新硬件） */
+    pwm_manager_set_gesture_outputs(s_gestures[idx].pwm, PWM_CHANNEL_COUNT);
+
+    /* 互斥高亮：清除所有格子，当前格蓝底白字 */
+    SemaphoreHandle_t mux = get_lvgl_mutex();
+    if (mux && xSemaphoreTakeRecursive(mux, pdMS_TO_TICKS(100)) == pdTRUE) {
+        for (uint8_t i = 0; i < GESTURE_COUNT; i++) {
+            bool sel = (i == idx);
+            if (s_gesture_cells[i]) {
+                lv_obj_set_style_bg_color(s_gesture_cells[i],
+                    sel ? lv_color_hex(0x007AFF) : lv_color_hex(0xF2F2F7), 0);
+            }
+            if (s_gesture_name_labels[i]) {
+                lv_obj_set_style_text_color(s_gesture_name_labels[i],
+                    sel ? lv_color_white() : lv_color_hex(0x333333), 0);
+            }
+        }
+        s_selected_gesture = idx;
+        xSemaphoreGiveRecursive(mux);
+    }
+
+    /* 更新底部 6 路输出汇总 */
+    gesture_update_info_label(s_gestures[idx].pwm);
 }
 
 static void event_connect_btn_cb(lv_event_t *e)
@@ -1052,4 +1466,47 @@ static void event_pwm_back_btn_cb(lv_event_t *e)
 static void event_clear_pwm_cb(lv_event_t *e)
 {
     ui_clear_pwm();
+}
+
+/* PWM 格子点击：切换该通道的手动覆盖状态。
+ * 覆盖时该通道直接输出 1500us（灰色），不受 CH 值影响；
+ * 再次点击恢复自动跟随 CH 值。
+ * 点击后立即刷新 PWM 硬件输出 + UI 显示（不等下一帧 BLE 数据）。 */
+static void event_pwm_cell_click_cb(lv_event_t *e)
+{
+    lv_obj_t *clicked = lv_event_get_current_target(e);
+    if (!clicked) return;
+
+    /* 通过指针匹配确定点击的是哪个格子（回调注册在 cell 上，current_target 即 cell） */
+    uint8_t ch;
+    for (ch = 0; ch < PWM_CHANNEL_COUNT; ch++) {
+        if (s_pwm_cells[ch].cell == clicked) break;
+    }
+    if (ch >= PWM_CHANNEL_COUNT) return;
+
+    /* 切换覆盖状态 */
+    pwm_manager_toggle_override(ch);
+
+    /* 立即刷新 PWM 硬件输出（使用缓存的最新数据） */
+    pwm_manager_update(s_pwm_values_cache, s_pwm_count_cache);
+
+    /* 立即刷新 UI 显示（输入值、输出脉宽、颜色、边框、汇总行） */
+    ui_update_pwm_values(s_pwm_values_cache, s_pwm_count_cache);
+}
+
+/* 急停按钮：切换全局急停状态。
+ * 开启 -> 所有 CH 通道强制输出 1500us（优先级高于 CH 值与单通道覆盖）；
+ * 再次点击 -> 关闭急停，恢复各通道正常行为。
+ * 点击后立即刷新 PWM 硬件 + UI（输出脉宽、颜色、汇总行、按钮文字）。 */
+static void event_estop_btn_cb(lv_event_t *e)
+{
+    (void)e;
+    bool new_state = !pwm_manager_get_estop();
+    pwm_manager_set_estop(new_state);
+
+    /* 立即刷新 PWM 硬件输出（使用缓存的最新数据） */
+    pwm_manager_update(s_pwm_values_cache, s_pwm_count_cache);
+
+    /* 立即刷新 UI 显示 */
+    ui_update_pwm_values(s_pwm_values_cache, s_pwm_count_cache);
 }
