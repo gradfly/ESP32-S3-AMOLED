@@ -76,6 +76,16 @@ static ble_device_info_t s_device_list[BLE_SCAN_RESULT_MAX];
 static uint16_t s_device_count = 0;
 static char s_connected_name[32] = "";   /* 当前已连接设备名，用于数据屏显示 */
 
+/* 最近一次 BLE 状态，供切屏时刷新目标屏状态显示（解决状态变化时非活动屏
+ * status label 未刷新的问题：连接后回主屏/PWM 屏才更新文字） */
+static ble_state_t s_last_state = BLE_STATE_IDLE;
+static char s_last_message[48] = "";
+
+/* 滑动切屏动画（lv_scr_load_anim）结束后刷新目标屏状态的一次性定时器。
+ * 动画期间活动屏仍是旧屏，需延迟到 SWIPE_ANIM_MS 后再 refresh，
+ * 避免对非活动屏对象操作导致 LVGL 卡死。 */
+static lv_timer_t *s_status_refresh_timer = NULL;
+
 static lv_style_t s_btn_style;
 static lv_style_t s_label_style;
 static lv_style_t s_title_style;
@@ -128,6 +138,9 @@ static void setup_screen_swipe_base(lv_obj_t *screen); /* 仅屏幕级手势（�
 static void gesture_swipe_gesture_cb(lv_event_t *e);  /* 手势屏手势：右边缘左滑 -> 主屏 */
 static void setup_gesture_screen_swipe(lv_obj_t *screen); /* 手势屏屏幕级手势（无热区） */
 static void gesture_update_info_label(const uint16_t *us); /* 更新手势屏底部 6 路汇总 */
+static void refresh_active_screen_status(void);     /* 按当前 BLE 状态刷新活动屏 status */
+static void status_refresh_timer_cb(lv_timer_t *t); /* 滑动动画结束后 refresh 回调 */
+static void schedule_status_refresh(void);           /* 安排一次性 refresh 定时器 */
 
 static void create_main_screen(void);
 static void create_list_screen(void);
@@ -182,6 +195,8 @@ static void swipe_do_switch(bool go_next)
                                       : LV_SCR_LOAD_ANIM_MOVE_RIGHT;
     lv_scr_load_anim(target_scr, anim, SWIPE_ANIM_MS, 0, false);
     s_last_swipe_ms = now;
+    /* 动画结束后 refresh 目标屏状态（动画期间活动屏未切换，需延迟） */
+    schedule_status_refresh();
 
     xSemaphoreGiveRecursive(mux);
 }
@@ -318,6 +333,7 @@ static void gesture_swipe_to_main(void)
 
     lv_scr_load_anim(s_screen_main, LV_SCR_LOAD_ANIM_MOVE_LEFT, SWIPE_ANIM_MS, 0, false);
     s_last_swipe_ms = now;
+    schedule_status_refresh();
 
     xSemaphoreGiveRecursive(mux);
 }
@@ -1002,6 +1018,80 @@ static void event_uuid_connect_cb(lv_event_t *e)
     ble_manager_connect(&s_device_list[s_selected_device], &uuids);
 }
 
+/* 切屏后或状态变化时调用：根据 s_last_state 刷新当前活动屏的状态显示。
+ * 仅操作当前活动屏对象，避免对非活动屏写触发重绘导致 LVGL 卡死。
+ * 各屏 status 内容规则：
+ *   MAIN  s_status_label:       显示 s_last_message
+ *   MAIN  s_scan_btn 文字/禁用: SCANNING→"Scanning..."+禁用, 其它→"Scan"+可用
+ *   DATA  s_data_status_label:  CONNECTED→"Connected: <name>", 否则→s_last_message
+ *   PWM   s_pwm_status_label:   同 DATA
+ * LIST/UUID/GESTURE 屏无 status label，自动跳过。 */
+static void refresh_active_screen_status(void)
+{
+    lv_obj_t *scr = lv_scr_act();
+    const char *msg = s_last_message[0] ? s_last_message : "BLE Ready";
+
+    if (scr == s_screen_main) {
+        if (s_status_label) {
+            lv_label_set_text(s_status_label, msg);
+        }
+        if (s_scan_btn) {
+            lv_obj_t *lbl = lv_obj_get_child(s_scan_btn, 0);
+            if (s_last_state == BLE_STATE_SCANNING) {
+                if (lbl) lv_label_set_text(lbl, "Scanning...");
+                lv_obj_add_state(s_scan_btn, LV_STATE_DISABLED);
+            } else {
+                if (lbl) lv_label_set_text(lbl, "Scan");
+                lv_obj_clear_state(s_scan_btn, LV_STATE_DISABLED);
+            }
+        }
+    } else if (scr == s_screen_data) {
+        if (s_data_status_label) {
+            if (s_last_state == BLE_STATE_CONNECTED && s_connected_name[0]) {
+                char buf[48];
+                snprintf(buf, sizeof(buf), "Connected: %s", s_connected_name);
+                lv_label_set_text(s_data_status_label, buf);
+            } else {
+                lv_label_set_text(s_data_status_label, msg);
+            }
+        }
+    } else if (scr == s_screen_pwm) {
+        if (s_pwm_status_label) {
+            if (s_last_state == BLE_STATE_CONNECTED && s_connected_name[0]) {
+                char buf[48];
+                snprintf(buf, sizeof(buf), "Connected: %s", s_connected_name);
+                lv_label_set_text(s_pwm_status_label, buf);
+            } else {
+                lv_label_set_text(s_pwm_status_label, msg);
+            }
+        }
+    }
+}
+
+/* lv_scr_load_anim 动画期间活动屏仍是旧屏，动画结束（SWIPE_ANIM_MS 后）才切换
+ * 为目标屏。此回调在动画结束后触发，此时目标屏已活动，refresh 安全。 */
+static void status_refresh_timer_cb(lv_timer_t *t)
+{
+    SemaphoreHandle_t mux = get_lvgl_mutex();
+    if (mux && xSemaphoreTakeRecursive(mux, pdMS_TO_TICKS(100)) == pdTRUE) {
+        refresh_active_screen_status();
+        xSemaphoreGiveRecursive(mux);
+    }
+    s_status_refresh_timer = NULL;  /* 一次性 timer，LVGL 已自动删除 */
+}
+
+/* 滑动切屏后调用：安排一次性定时器，在动画结束后刷新目标屏状态显示。
+ * 用于 swipe_do_switch / gesture_swipe_to_main（它们用 lv_scr_load_anim 带动画，
+ * 不经过 ui_switch_screen，需补刷目标屏 status label）。 */
+static void schedule_status_refresh(void)
+{
+    if (s_status_refresh_timer) {
+        lv_timer_del(s_status_refresh_timer);
+    }
+    s_status_refresh_timer = lv_timer_create(status_refresh_timer_cb, SWIPE_ANIM_MS + 20, NULL);
+    lv_timer_set_repeat_count(s_status_refresh_timer, 1);
+}
+
 void ui_switch_screen(ui_screen_t screen)
 {
     SemaphoreHandle_t mux = get_lvgl_mutex();
@@ -1030,6 +1120,10 @@ void ui_switch_screen(ui_screen_t screen)
         break;
     }
 
+    /* 切到目标屏后立即按当前 BLE 状态刷新该屏显示，确保进入任意屏
+     * 都能看到正确的连接/扫描状态（修复连接后回主屏仍显示旧状态的问题） */
+    refresh_active_screen_status();
+
     xSemaphoreGiveRecursive(mux);
 }
 
@@ -1040,61 +1134,32 @@ void ui_update_state(ble_state_t state, const char *message)
 
     if (xSemaphoreTakeRecursive(mux, pdMS_TO_TICKS(100)) != pdTRUE) return;
 
-    /* s_status_label 属于主屏；仅在主屏活动时更新，避免对非活动屏对象操作
-     * 触发重绘导致 LVGL 卡死（SCAN 时活动屏为 LIST，断开时为 DATA/PWM） */
-    if (s_status_label && lv_scr_act() == s_screen_main) {
-        lv_label_set_text(s_status_label, message);
+    /* 保存最近状态，供切屏时 refresh_active_screen_status() 刷新目标屏 */
+    s_last_state = state;
+    if (message) {
+        strncpy(s_last_message, message, sizeof(s_last_message) - 1);
+        s_last_message[sizeof(s_last_message) - 1] = '\0';
     }
 
     switch (state) {
-    case BLE_STATE_SCANNING:
-        /* s_scan_btn 属于主屏；SCAN 由 LIST 屏触发，此时主屏非活动，仅匹配时更新 */
-        if (s_scan_btn && lv_scr_act() == s_screen_main) {
-            lv_obj_t *lbl = lv_obj_get_child(s_scan_btn, 0);
-            if (lbl) lv_label_set_text(lbl, "Scanning...");
-            lv_obj_add_state(s_scan_btn, LV_STATE_DISABLED);
-        }
-        break;
-    case BLE_STATE_IDLE:
-        if (s_scan_btn && lv_scr_act() == s_screen_main) {
-            lv_obj_t *lbl = lv_obj_get_child(s_scan_btn, 0);
-            if (lbl) lv_label_set_text(lbl, "Scan");
-            lv_obj_clear_state(s_scan_btn, LV_STATE_DISABLED);
-        }
-        break;
-    case BLE_STATE_CONNECTING:
-        /* CONNECTING 由 UUID 屏触发，DATA/PWM 均非活动，仅活动屏匹配时更新 */
-        if (s_data_status_label && lv_scr_act() == s_screen_data) {
-            lv_label_set_text(s_data_status_label, "Connecting...");
-        }
-        if (s_pwm_status_label && lv_scr_act() == s_screen_pwm) {
-            lv_label_set_text(s_pwm_status_label, "Connecting...");
-        }
-        break;
     case BLE_STATE_CONNECTED:
-        /* 先切换到数据屏，再操作对象——避免在非活动屏上操作导致卡死 */
+        /* 先切到数据屏，再操作对象；ui_switch_screen 内部会 refresh 当前屏，
+         * 此时 DATA 屏活动，s_data_status_label 被设为 "Connected: <name>" */
         ui_switch_screen(UI_SCREEN_DATA);
-        if (s_data_status_label) {
-            char buf[48];
-            snprintf(buf, sizeof(buf), "Connected: %s",
-                             s_connected_name[0] ? s_connected_name : "Device");
-            lv_label_set_text(s_data_status_label, buf);
-        }
-        /* PWM 屏此时非活动，不直接更新其对象；进入 PWM 屏后由数据刷新覆盖 */
         ui_clear_data();
-        ui_clear_pwm();
+        ui_clear_pwm();   /* PWM 非活动时内部守卫会安全跳过 */
         break;
     case BLE_STATE_DISCONNECTED:
         s_connected_name[0] = '\0';
-        /* 先切换到主屏，再操作主屏对象；DATA/PWM 屏此时为非活动，
-         * 不再直接更新其对象（避免对非活动屏写导致 LVGL 卡死）。
-         * 下次连接或进入对应屏时由 CONNECTING/CONNECTED 或激活逻辑重置。 */
-        ui_switch_screen(UI_SCREEN_MAIN);
-        if (s_status_label) {
-            lv_label_set_text(s_status_label, message);
-        }
+        ui_switch_screen(UI_SCREEN_MAIN);   /* 内部 refresh 主屏，显示 "Disconnected" */
         break;
+    case BLE_STATE_SCANNING:
+    case BLE_STATE_CONNECTING:
+    case BLE_STATE_IDLE:
     default:
+        /* 仅刷新当前活动屏。SCAN 时 LIST 屏无 status label 自动跳过；
+         * 回主屏时由 ui_switch_screen 末尾 refresh 更新 s_scan_btn/s_status_label */
+        refresh_active_screen_status();
         break;
     }
 

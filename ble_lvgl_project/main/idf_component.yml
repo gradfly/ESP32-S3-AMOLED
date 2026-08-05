@@ -1,7 +1,0 @@
-dependencies:
-  idf:
-    version: ">=5.0"
-  lvgl/lvgl:
-    version: "^8.3.11"
-    rules:
-      - if: "target == esp32s3"
