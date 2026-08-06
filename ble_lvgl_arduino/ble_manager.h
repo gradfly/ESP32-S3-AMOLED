@@ -39,9 +39,9 @@ typedef void (*ble_data_callback_t)(uint8_t *data, uint16_t len);
 typedef void (*ble_state_callback_t)(ble_state_t state, const char *message);
 
 /* 连接目标设备的 GATT UUID 配置。
- * 字段为 hex 字符串：16 位如 "FFF0"、32 位如 "0000FFF0"、
- * 或 128 位如 "0000FFF0-0000-1000-8000-00805F9B34FB"。
- * 默认值（BLE 串口模块常见）：service=FFF0, notify=FFF1, write=FFF2 */
+ * 字段为 hex 字符串：16 位如 "FFE0"、32 位如 "0000FFE0"、
+ * 或 128 位如 "0000FFE0-0000-1000-8000-00805F9B34FB"。
+ * 默认值（BLE 串口模块常见）：service=FFE0, notify=FFE2, write=FFE1 */
 typedef struct {
     char service[40];   /* 服务 UUID */
     char notify[40];    /* 通知特征 UUID（设备 -> 本机，接收数据） */

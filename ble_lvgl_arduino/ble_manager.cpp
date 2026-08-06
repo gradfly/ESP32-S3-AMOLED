@@ -23,6 +23,12 @@ static NimBLEClient *s_client = nullptr;
 static NimBLERemoteCharacteristic *s_rx_char = nullptr;
 static NimBLERemoteCharacteristic *s_tx_char = nullptr;
 
+/* BLE Server：让手机能连接 ESP32 并通过 Write(FFE1) 发送手势数据 */
+static NimBLEServer          *s_server = nullptr;
+static NimBLEService         *s_server_service = nullptr;
+static NimBLECharacteristic  *s_server_notify_char = nullptr;   /* FFE2 */
+static NimBLECharacteristic  *s_server_write_char = nullptr;    /* FFE1 */
+
 static bool s_is_connected = false;
 static uint8_t s_remote_mac[6] = {0};
 static TaskHandle_t s_connect_task_handle = NULL;
@@ -64,6 +70,21 @@ static void notify_callback(NimBLERemoteCharacteristic *pCharacteristic,
         xQueueSendFromISR(s_data_queue, &msg, &higher_priority_task_woken);
     }
 }
+
+/* BLE Server 写特征回调：手机通过 Write(FFE1) 发送的数据进入与 Notify 相同的处理管线 */
+class ServerWriteCallbacks : public NimBLECharacteristicCallbacks {
+    void onWrite(NimBLECharacteristic* pCharacteristic, NimBLEConnInfo& connInfo) override {
+        std::string val = pCharacteristic->getValue();
+        if (s_data_queue && val.length() > 0) {
+            ble_data_msg_t msg;
+            uint16_t copy_len = (val.length() > BLE_DATA_BUFFER_SIZE) ? BLE_DATA_BUFFER_SIZE : val.length();
+            memcpy(msg.data, val.data(), copy_len);
+            msg.len = copy_len;
+            xQueueSend(s_data_queue, &msg, 0);
+            Serial.printf("[BLE] Phone Write: %u bytes\n", (unsigned)copy_len);
+        }
+    }
+};
 
 class MyAdvertisedDeviceCallbacks : public NimBLEScanCallbacks
 {
@@ -234,7 +255,7 @@ static bool uuid_string_matches(const NimBLEUUID &uuid, const char *pattern)
     std::transform(a.begin(), a.end(), a.begin(), [](unsigned char c) { return std::tolower(c); });
     std::transform(b.begin(), b.end(), b.begin(), [](unsigned char c) { return std::tolower(c); });
 
-    // 允许写法为 "FFF0" / "0000FFF0" / "0000FFF0-0000-1000-8000-00805F9B34FB"
+    // 允许写法为 "FFE0" / "0000FFE0" / "0000FFE0-0000-1000-8000-00805F9B34FB"
     if (a == b) return true;
     if (a.size() == 32 && b.size() == 4 && a.substr(12, 4) == b) return true;
     if (a.size() == 32 && b.size() == 8 && a.substr(8, 8) == b) return true;
@@ -607,7 +628,7 @@ static bool connect_to_server(NimBLEAddress address)
         Serial.println("[BLE] WARN: No notify characteristic found");
     }
 
-    if (!s_tx_char) {
+        if (!s_tx_char) {
         Serial.println("[BLE] WARN: No write characteristic found");
     }
 
@@ -700,6 +721,18 @@ void ble_manager_init(void)
         ESP_LOGE(TAG, "Failed to create data queue");
     }
 
+    /* 创建 BLE Server：手机通过 Write(FFE1) 发送 11 路 CH 值帧 → onWrite → s_data_queue → 同一管线 */
+    s_server = NimBLEDevice::createServer();
+    s_server_service = s_server->createService("FFE0");
+    s_server_notify_char = s_server_service->createCharacteristic("FFE2", NIMBLE_PROPERTY::NOTIFY);
+    s_server_write_char  = s_server_service->createCharacteristic("FFE1", NIMBLE_PROPERTY::WRITE);
+    s_server_write_char->setCallbacks(new ServerWriteCallbacks());
+    s_server_service->start();
+    NimBLEAdvertising *pAdv = NimBLEDevice::getAdvertising();
+    pAdv->addServiceUUID("FFE0");
+    pAdv->start();
+    Serial.println("[BLE] Server started: FFE0/FFE2(notify)/FFE1(write), advertising...");
+    
     ESP_LOGI(TAG, "BLE initialized successfully (s_scan=%p)", s_scan);
     Serial.printf("[BLE] NimBLE initialized, scan=%p, heap=%lu\n", s_scan, (unsigned long)free_heap);
     update_state(BLE_STATE_IDLE, "BLE Ready");

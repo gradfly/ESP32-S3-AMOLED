@@ -33,9 +33,9 @@ static lv_obj_t *s_scan_btn = NULL;
 
 /* UUID 设置屏：连接前让用户指定 服务/通知/写 特征 UUID */
 static lv_obj_t *s_screen_uuid = NULL;
-static lv_obj_t *s_ta_service = NULL;   /* 服务 UUID textarea，默认 FFF0 */
-static lv_obj_t *s_ta_notify = NULL;    /* 通知特征 UUID textarea，默认 FFF1 */
-static lv_obj_t *s_ta_write = NULL;    /* 写特征 UUID textarea，默认 FFF2 */
+static lv_obj_t *s_ta_service = NULL;   /* 服务 UUID textarea，默认 FFE0 */
+static lv_obj_t *s_ta_notify = NULL;    /* 通知特征 UUID textarea，默认 FFE2 */
+static lv_obj_t *s_ta_write = NULL;    /* 写特征 UUID textarea，默认 FFE1 */
 static lv_obj_t *s_active_ta = NULL;   /* 当前十六进制键盘输入目标 */
 
 /* 数据屏：11 通道数值网格 + 原始帧 + 连接状态 */
@@ -298,7 +298,7 @@ static void setup_screen_swipe(lv_obj_t *screen)
  * 手势屏由主屏 "自主训练" 按钮进入，仅右边缘左滑返回主屏。
  * 不复用 swipe_do_switch（手势屏不在 s_swipe_order 中，cur_idx 会<0）。
  * 返回主屏前：6 路 PWM 输出回归姿势 1700/2000/2000/2000/2000/2000us。 */
-static const uint16_t s_gesture_rest_pose[PWM_CHANNEL_COUNT] = {1700,2000,2000,2000,2000,2000};
+static const uint16_t s_gesture_rest_pose[PWM_CHANNEL_COUNT] = {1750,2000,2000,2000,2000,2000};
 
 static void gesture_swipe_to_main(void)
 {
@@ -746,18 +746,18 @@ typedef struct {
     uint16_t            pwm[PWM_CHANNEL_COUNT];  /* 点击该手势时 6 路输出脉宽(us) */
 } gesture_entry_t;
 static const gesture_entry_t s_gestures[GESTURE_COUNT] = {
-    { &img_gesture_1,    "1",    {1450,1000,1000,1000,1000,1000} },
-    { &img_gesture_2,    "2",    {1450,1000,2000,2000,1000,1000} },
-    { &img_gesture_3,    "3",    {1450,1000,2000,2000,2000,1000} },
-    { &img_gesture_4,    "4",    {1450,1000,2000,2000,2000,2000} },
-    { &img_gesture_5,    "5",    {1700,2000,2000,2000,2000,2000} },
-    { &img_gesture_6,    "6",    {1700,2000,1000,1000,1000,2000} },
-    { &img_gesture_7,    "7",    {1700,2000,2000,2000,1000,1000} },
-    { &img_gesture_8,    "8",    {1700,2000,2000,1000,1000,1000} },
-    { &img_gesture_10,   "10",   {1450,1000,1000,1000,1000,1000} },
-    { &img_gesture_ok,   "ok",   {1450,1000,1000,1000,1000,1000} },
-    { &img_gesture_good, "good", {1450,1000,1000,2000,2000,2000} },
-    { &img_gesture_love, "love", {1700,2000,2000,1000,1000,2000} },
+    { &img_gesture_1,    "1",    {1000,1000,1000,1000,1000,1400} },
+    { &img_gesture_2,    "2",    {1000,2000,2000,1000,1000,1400} },
+    { &img_gesture_3,    "3",    {1000,2000,2000,2000,1000,1400} },
+    { &img_gesture_4,    "4",    {1000,2000,2000,2000,2000,1400} },
+    { &img_gesture_5,    "5",    {2000,2000,2000,2000,2000,1750} },
+    { &img_gesture_6,    "6",    {2000,1000,1000,1000,2000,1750} },
+    { &img_gesture_7,    "7",    {2000,2000,2000,1000,1000,1750} },
+    { &img_gesture_8,    "8",    {2000,2000,1000,1000,1000,1750} },
+    { &img_gesture_10,   "10",   {1000,1000,1000,1000,1000,1400} },
+    { &img_gesture_ok,   "ok",   {1000,2000,2000,2000,2000,1400} },
+    { &img_gesture_good, "good", {2000,1000,1000,1000,1000,1750} },
+    { &img_gesture_love, "love", {2000,2000,1000,1000,2000,1750} },
 };
 
 static void create_gesture_screen(void)
@@ -876,12 +876,12 @@ static void create_uuid_screen(void)
     /* 3 个 UUID 字段：标签 + 单行 textarea，最大 8 字符（16/32 位 hex） */
     static const char *labels[3]   = {"Service", "Notify", "Write"};
     /* 目标手机 GATT（nRF Connect 实测）：
-     *   Service: 0000FFF0-0000-1000-8000-00805F9B34FB
-     *   Notify : 0000FFF1-0000-1000-8000-00805F9B34FB
-     *   Write  : 0000FFF2-0000-1000-8000-00805F9B34FB
+     *   Service: 0000FFE0-0000-1000-8000-00805F9B34FB
+     *   Notify : 0000FFE2-0000-1000-8000-00805F9B34FB
+     *   Write  : 0000FFE1-0000-1000-8000-00805F9B34FB
      * NimBLEUUID(std::string) 会把 16 位扩展到 128 位标准基比较，
      * 所以这里直接写 16 位短码即可匹配完整 128 位 UUID。 */
-    static const char *defaults[3] = {"FFF0", "FFF1", "FFF2"};
+    static const char *defaults[3] = {"FFE0", "FFE2", "FFE1"};
     lv_obj_t **tas[3] = {&s_ta_service, &s_ta_notify, &s_ta_write};
     for (int i = 0; i < 3; i++) {
         lv_coord_t y = 40 + i * 42;
@@ -1504,9 +1504,9 @@ static void event_connect_btn_cb(lv_event_t *e)
     }
     /* 先切换到 UUID 屏，再初始化 textarea——避免在非活动屏上操作对象导致卡死 */
     ui_switch_screen(UI_SCREEN_UUID);
-    lv_textarea_set_text(s_ta_service, "FFF0");
-    lv_textarea_set_text(s_ta_notify, "FFF1");
-    lv_textarea_set_text(s_ta_write, "FFF2");
+    lv_textarea_set_text(s_ta_service, "FFE0");
+    lv_textarea_set_text(s_ta_notify, "FFE2");
+    lv_textarea_set_text(s_ta_write, "FFE1");
     s_active_ta = s_ta_service;
     lv_obj_set_style_border_color(s_ta_service, lv_color_hex(0x007AFF), 0);
     lv_obj_set_style_border_color(s_ta_notify, lv_color_hex(0xCCCCCC), 0);

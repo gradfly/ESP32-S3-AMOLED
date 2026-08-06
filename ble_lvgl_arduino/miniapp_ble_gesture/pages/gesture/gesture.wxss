@@ -1,0 +1,134 @@
+/* pages/gesture/gesture.wxss 仿Training模式视觉 */
+.page {
+  padding: 24rpx 24rpx 48rpx;
+  min-height: 100vh;
+  box-sizing: border-box;
+  background: #FFFFFF;
+}
+
+/* ===== 顶部状态 ===== */
+.top-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8rpx 8rpx 16rpx;
+}
+.device-name {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: #1C1C1E;
+}
+.status-dot-wrap {
+  display: flex;
+  align-items: center;
+}
+.status-dot {
+  width: 14rpx;
+  height: 14rpx;
+  border-radius: 50%;
+  margin-right: 8rpx;
+}
+.status-dot-green {
+  background: #34C759;
+  box-shadow: 0 0 0 4rpx rgba(52, 199, 89, 0.2);
+}
+.status-text {
+  font-size: 24rpx;
+  color: #8E8E93;
+}
+
+/* ===== 手势状态行（灰色小字） ===== */
+.gesture-status {
+  text-align: center;
+  color: #8E8E93;
+  font-size: 28rpx;
+  margin-bottom: 16rpx;
+}
+
+/* ===== 2列 × 6行 网格（与Training模式比例一致：圆角/浅灰底/左右留白） ===== */
+.grid {
+  display: flex;
+  flex-wrap: wrap;
+  /* 两列间距 16rpx（约8px对应） */
+  gap: 16rpx;
+  padding: 0;
+}
+.cell {
+  /* 两列等宽，减去一半间距 */
+  width: calc(50% - 8rpx);
+  /* 高度比例匹配Training cell（单格约140rpx ≈ 70px，含图片+右侧文字） */
+  height: 140rpx;
+  background: #F2F2F7;
+  border-radius: 12rpx;        /* 对应Training 6px圆角(rpx×2) */
+  display: flex;
+  align-items: center;
+  padding: 0 20rpx;
+  box-sizing: border-box;
+  transition: background .15s ease;
+}
+.cell.selected {
+  background: #007AFF;       /* 选中蓝底，同Training */
+}
+.cell.selected .cell-name {
+  color: #FFFFFF;            /* 选中白字 */
+}
+/* 触摸反馈：非选中时按下陷 */
+.cell:active:not(.selected) {
+  background: #E5E5EA;
+}
+
+.cell-img {
+  width: 72rpx;               /* 36px × 2 rpx */
+  height: 72rpx;
+  margin-right: 20rpx;
+  flex-shrink: 0;
+}
+.cell-name {
+  font-size: 32rpx;
+  color: #333333;
+  font-weight: 500;
+  /* 长名字不换行（如"good"/"love"） */
+  white-space: nowrap;
+}
+
+/* ===== 底部 6路PWM 汇总行 ===== */
+.summary-row {
+  margin-top: 32rpx;
+  padding: 20rpx 24rpx;
+  background: #F9F9F9;
+  border-radius: 12rpx;
+  border: 1rpx solid #EFEFEF;
+}
+.summary-title {
+  font-size: 24rpx;
+  color: #8E8E93;
+  margin-bottom: 10rpx;
+}
+.summary-values {
+  text-align: center;
+  font-family: Menlo, Consolas, "SF Mono", monospace;
+  font-size: 26rpx;
+  color: #1C1C1E;
+  letter-spacing: 1rpx;
+  font-weight: 500;
+}
+
+/* ===== 底部按钮行 ===== */
+.btn-row {
+  display: flex;
+  gap: 24rpx;
+  margin-top: 40rpx;
+}
+.btn {
+  flex: 1;
+  height: 88rpx;
+  line-height: 88rpx;
+  border-radius: 16rpx;
+  font-size: 30rpx;
+  font-weight: 500;
+  border: none;
+}
+.btn::after { border: none; }
+.btn-blue { background: #007AFF; color: #FFFFFF; }
+.btn-gray { background: #8E8E93; color: #FFFFFF; }
+.btn:active { opacity: 0.85; }

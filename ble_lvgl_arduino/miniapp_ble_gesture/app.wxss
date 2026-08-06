@@ -1,0 +1,20 @@
+/* app.wxss - 全局样式 */
+page {
+  font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  font-size: 28rpx;
+  color: #333333;
+  background: #FFFFFF;
+}
+
+/* 通用按钮重置 */
+button {
+  margin: 0;
+  padding: 0;
+  line-height: normal;
+}
+button::after {
+  border: none;
+}
+
+/* 颜色变量（按Training模式） */
+/* 主题蓝：#007AFF   浅灰底：#F2F2F7   次要灰文字：#8E8E93 */

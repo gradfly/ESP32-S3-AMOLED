@@ -1,0 +1,43 @@
+<!--pages/gesture/gesture.wxml 仿Training模式-->
+<view class="page">
+  <!-- 顶部设备名 + 状态行 -->
+  <view class="top-row">
+    <view class="device-name">🔗 {{deviceName}}</view>
+    <view class="status-dot-wrap">
+      <view class="status-dot status-dot-green"></view>
+      <text class="status-text">已连接</text>
+    </view>
+  </view>
+
+  <!-- 状态行（对应Training屏 "12 Gestures"） -->
+  <view class="gesture-status">12 Gestures</view>
+
+  <!-- 2列 × 6行 网格（12手势，仿Training布局：圆角6px/浅灰底#F2F2F7/选中蓝底#007AFF白字） -->
+  <view class="grid">
+    <block wx:for="{{gestures}}" wx:key="name">
+      <view
+        class="cell {{selectedIndex === index ? 'selected' : ''}}"
+        data-index="{{index}}"
+        bindtap="onGestureTap">
+        <image
+          class="cell-img"
+          src="{{item.image}}"
+          mode="aspectFit"
+          lazy-load="true"/>
+        <text class="cell-name">{{item.name}}</text>
+      </view>
+    </block>
+  </view>
+
+  <!-- 底部6路PWM汇总行（显示映射后的PWM，与Training模式底部格式一致） -->
+  <view class="summary-row">
+    <view class="summary-title">6路 PWM 输出</view>
+    <view class="summary-values">{{summaryText}}</view>
+  </view>
+
+  <!-- 底部按钮行：归零姿态 / 断开连接 -->
+  <view class="btn-row">
+    <button class="btn btn-gray" bindtap="onResetTap" loading="{{resetting}}">归零姿态</button>
+    <button class="btn btn-blue" bindtap="onDisconnectTap" loading="{{disconnecting}}">断开连接</button>
+  </view>
+</view>

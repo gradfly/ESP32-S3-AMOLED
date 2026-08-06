@@ -1,0 +1,20 @@
+{
+  "pages": [
+    "pages/index/index",
+    "pages/gesture/gesture"
+  ],
+  "window": {
+    "navigationBarBackgroundColor": "#007AFF",
+    "navigationBarTextStyle": "white",
+    "navigationBarTitleText": "蓝牙手势控制",
+    "backgroundColor": "#FFFFFF"
+  },
+  "permission": {
+    "scope.userLocation": {
+      "desc": "蓝牙扫描需要位置信息用于发现附近的ESP32设备"
+    }
+  },
+  "requiredPrivateInfos": ["getLocation"],
+  "style": "v2",
+  "sitemapLocation": "sitemap.json"
+}
