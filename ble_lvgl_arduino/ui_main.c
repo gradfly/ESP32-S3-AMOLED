@@ -699,9 +699,12 @@ static void create_pwm_screen(void)
 
     /* 底部信息行：操作提示 */
     s_pwm_info_label = lv_label_create(s_screen_pwm);
-    lv_label_set_text(s_pwm_info_label, "Tips: Click the Ch channel to pause single-finger movement. Click E-STOP to pause all movements; click again to resume.");
+    lv_label_set_text(s_pwm_info_label, "Click the Ch to pause single finger.\n Click E-STOP to pause all.\n Click again to resume.");
+    lv_obj_set_style_text_font(s_pwm_info_label, &lv_font_montserrat_12, 0);
     lv_obj_add_style(s_pwm_info_label, &s_label_style, 0);
+    lv_obj_center(s_pwm_info_label);
     lv_obj_set_style_text_color(s_pwm_info_label, lv_color_hex(0x333333), 0);
+    lv_obj_set_style_text_align(s_pwm_info_label, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_width(s_pwm_info_label, EXAMPLE_LCD_H_RES - 16);
     /* WRAP 模式：按设置的宽度自动换行；需配合 recolor=off 避免解析开销 */
     lv_label_set_long_mode(s_pwm_info_label, LV_LABEL_LONG_WRAP);
@@ -724,7 +727,7 @@ static void create_pwm_screen(void)
     lv_obj_set_size(clear_btn, 120, 42);
     lv_obj_align(clear_btn, LV_ALIGN_BOTTOM_RIGHT, -10, -10);
     lv_obj_t *clear_label = lv_label_create(clear_btn);
-    lv_label_set_text(clear_label, "Clear All");
+    lv_label_set_text(clear_label, "Clear");
     lv_obj_set_style_text_font(clear_label, &lv_font_montserrat_18, 0);
     lv_obj_center(clear_label);
     lv_obj_add_event_cb(clear_btn, event_clear_pwm_cb, LV_EVENT_CLICKED, NULL);
@@ -772,6 +775,7 @@ static void create_gesture_screen(void)
     s_gesture_status_label = lv_label_create(s_screen_gesture);
     lv_label_set_text(s_gesture_status_label, "12 Gestures");
     lv_obj_add_style(s_gesture_status_label, &s_label_style, 0);
+    lv_obj_set_style_text_font(s_gesture_status_label, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(s_gesture_status_label, lv_color_hex(0x8E8E93), 0);
     lv_obj_align(s_gesture_status_label, LV_ALIGN_TOP_MID, 0, 52);
 
@@ -828,9 +832,10 @@ static void create_gesture_screen(void)
     s_gesture_info_label = lv_label_create(s_screen_gesture);
     lv_label_set_text(s_gesture_info_label, "PWM: ---- ---- ---- ---- ---- ----");
     lv_obj_add_style(s_gesture_info_label, &s_label_style, 0);
+    lv_obj_set_style_text_font(s_gesture_info_label, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(s_gesture_info_label, lv_color_hex(0x333333), 0);
     lv_obj_set_width(s_gesture_info_label, EXAMPLE_LCD_H_RES - 16);
-    lv_label_set_long_mode(s_gesture_info_label, LV_LABEL_LONG_DOT);
+    lv_label_set_long_mode(s_gesture_info_label, LV_LABEL_LONG_WRAP);
     lv_obj_align(s_gesture_info_label, LV_ALIGN_TOP_MID, 0, 368);
 }
 
