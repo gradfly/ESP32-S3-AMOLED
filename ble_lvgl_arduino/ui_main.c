@@ -1148,15 +1148,56 @@ void ui_update_state(ble_state_t state, const char *message)
 
     switch (state) {
     case BLE_STATE_CONNECTED:
-        /* 先切到数据屏，再操作对象；ui_switch_screen 内部会 refresh 当前屏，
-         * 此时 DATA 屏活动，s_data_status_label 被设为 "Connected: <name>" */
-        ui_switch_screen(UI_SCREEN_DATA);
-        ui_clear_data();
-        ui_clear_pwm();   /* PWM 非活动时内部守卫会安全跳过 */
+        /* 区分两种连接模式：
+         *   1) ESP32 作为 Client 去连接外设 → message="Connected" → 跳数据屏（旧行为）
+         *   2) 手机小程序作为 Client 连接 ESP32 → message="Phone Connected" → 不跳屏，
+         *      保留在首页显示 "Phone Connected" 提示，用户可手动滑到数据/PWM 屏 */
+        {
+            bool is_phone_connect = (message && strstr(message, "Phone") != NULL);
+            if (is_phone_connect) {
+                /* 小程序连接：设置 connected_name 为 "Phone"，
+                 * 后续进入数据/PWM 屏时顶部会显示 "Connected: Phone" */
+                strncpy(s_connected_name, "Phone", sizeof(s_connected_name) - 1);
+                s_connected_name[sizeof(s_connected_name) - 1] = '\0';
+                /* 不跳屏：停留在首页显示 "Phone Connected" 成功提示 */
+                refresh_active_screen_status();
+                /* 清空旧数据：即便未跳屏，后续滑动进入时也是干净状态 */
+                ui_clear_data();
+                ui_clear_pwm();
+                /* 手势模式在连接后自动关闭：PWM 重新跟随 BLE 输入数据 */
+                pwm_manager_set_gesture_mode(false);
+            } else {
+                /* 外设连接：跳数据屏（原有行为） */
+                ui_switch_screen(UI_SCREEN_DATA);
+                ui_clear_data();
+                ui_clear_pwm();
+            }
+        }
         break;
     case BLE_STATE_DISCONNECTED:
         s_connected_name[0] = '\0';
-        ui_switch_screen(UI_SCREEN_MAIN);   /* 内部 refresh 主屏，显示 "Disconnected" */
+        /* 同样区分两种断开：
+         *   小程序断开 → message="Phone Disconnected" → 停在当前屏刷新状态
+         *   外设断开 → message="Disconnected"         → 强制返回首页（旧行为） */
+        {
+            bool is_phone_disconnect = (message && strstr(message, "Phone") != NULL);
+            if (is_phone_disconnect) {
+                /* 小程序断开：刷新当前屏状态，不跳回首页
+                 * （用户可能刚切到数据屏想看历史，直接跳回会很突兀） */
+                refresh_active_screen_status();
+                /* 清空手动覆盖 + 急停状态，释放舵机回归低脉宽 */
+                for (uint8_t i = 0; i < PWM_CHANNEL_COUNT; i++) {
+                    pwm_manager_set_override(i, false);
+                }
+                pwm_manager_set_estop(false);
+                pwm_manager_set_gesture_mode(false);
+                /* 触发一次 pwm_manager_update(NULL,0) → 全通道按默认低脉宽输出 */
+                pwm_manager_update(NULL, 0);
+            } else {
+                /* 外设断开：跳回首页（原有行为） */
+                ui_switch_screen(UI_SCREEN_MAIN);
+            }
+        }
         break;
     case BLE_STATE_SCANNING:
     case BLE_STATE_CONNECTING:
@@ -1278,6 +1319,13 @@ void ui_clear_data(void)
     if (!mux) return;
 
     if (xSemaphoreTakeRecursive(mux, pdMS_TO_TICKS(100)) != pdTRUE) return;
+
+    /* 仅在数据屏活动时清屏——对非活动屏对象操作会触发重绘导致 LVGL 卡死。
+     * 连接成功后数据会自动覆盖旧值，非活动时无需清屏。 */
+    if (lv_scr_act() != s_screen_data) {
+        xSemaphoreGiveRecursive(mux);
+        return;
+    }
 
     for (uint8_t i = 0; i < BLE_DATA_VALUE_COUNT; i++) {
         if (s_cells[i].value) {

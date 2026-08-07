@@ -18,6 +18,12 @@ static ble_data_callback_t s_data_cb = NULL;
 static ble_state_callback_t s_state_cb = NULL;
 static uint32_t s_scan_start_ms = 0;
 
+/* 延迟状态更新：BLE 回调在 NimBLE 任务中运行，不能直接调用 ui_update_state（需获取
+ * LVGL 互斥锁），否则可能死锁。改为在回调中记录待处理状态，由主 loop 统一处理。 */
+static volatile bool s_state_pending = false;
+static ble_state_t s_pending_state = BLE_STATE_IDLE;
+static char s_pending_message[64] = "";
+
 static NimBLEScan *s_scan = nullptr;
 static NimBLEClient *s_client = nullptr;
 static NimBLERemoteCharacteristic *s_rx_char = nullptr;
@@ -70,6 +76,51 @@ static void notify_callback(NimBLERemoteCharacteristic *pCharacteristic,
         xQueueSendFromISR(s_data_queue, &msg, &higher_priority_task_woken);
     }
 }
+
+/* BLE Server 连接/断开回调：手机连接上来时记录待处理状态，
+ * 由主 loop 中的 ble_manager_process_state() 统一通知 UI 层。
+ * 不能在此直接调用 update_state() → ui_update_state()，因为本回调运行在
+ * NimBLE 任务上下文，ui_update_state 需获取 LVGL 互斥锁，可能导致死锁。 */
+class ServerCallbacks : public NimBLEServerCallbacks {
+    void onConnect(NimBLEServer* pServer, NimBLEConnInfo& connInfo) override {
+        s_is_connected = true;
+        const uint8_t* mac = connInfo.getAddress().getVal();
+        memcpy(s_remote_mac, mac, 6);
+        ESP_LOGI(TAG, "Phone connected: MAC=%02X:%02X:%02X:%02X:%02X:%02X",
+                 mac[5], mac[4], mac[3], mac[2], mac[1], mac[0]);
+        Serial.printf("[BLE] Phone connected: %02X:%02X:%02X:%02X:%02X:%02X\n",
+                      mac[5], mac[4], mac[3], mac[2], mac[1], mac[0]);
+        /* 设置待处理状态，主 loop 中统一处理 UI 更新 */
+        s_pending_state = BLE_STATE_CONNECTED;
+        strncpy(s_pending_message, "Phone Connected", sizeof(s_pending_message) - 1);
+        s_pending_message[sizeof(s_pending_message) - 1] = '\0';
+        s_state_pending = true;
+    }
+
+    void onDisconnect(NimBLEServer* pServer, NimBLEConnInfo& connInfo, int reason) override {
+        s_is_connected = false;
+        ESP_LOGI(TAG, "Phone disconnected, reason=%d", reason);
+        Serial.printf("[BLE] Phone disconnected, reason=%d\n", reason);
+        /* 清空帧重组缓冲区 + 数据队列 */
+        s_frame_len = 0;
+        s_frame_buf[0] = '\0';
+        if (s_data_queue) {
+            ble_data_msg_t msg;
+            while (xQueueReceive(s_data_queue, &msg, 0) == pdPASS) {}
+        }
+        /* 设置待处理状态，主 loop 中统一处理 UI 更新 */
+        s_pending_state = BLE_STATE_DISCONNECTED;
+        strncpy(s_pending_message, "Phone Disconnected", sizeof(s_pending_message) - 1);
+        s_pending_message[sizeof(s_pending_message) - 1] = '\0';
+        s_state_pending = true;
+        /* 重新开启广播，允许下一次连接 */
+        NimBLEAdvertising* pAdv = NimBLEDevice::getAdvertising();
+        if (pAdv && !pAdv->isAdvertising()) {
+            pAdv->start();
+            Serial.println("[BLE] Advertising restarted for next connection");
+        }
+    }
+};
 
 /* BLE Server 写特征回调：手机通过 Write(FFE1) 发送的数据进入与 Notify 相同的处理管线 */
 class ServerWriteCallbacks : public NimBLECharacteristicCallbacks {
@@ -723,6 +774,8 @@ void ble_manager_init(void)
 
     /* 创建 BLE Server：手机通过 Write(FFE1) 发送 11 路 CH 值帧 → onWrite → s_data_queue → 同一管线 */
     s_server = NimBLEDevice::createServer();
+    /* 注册连接/断开回调：手机连接/断开时通知 UI 层刷新状态 */
+    s_server->setCallbacks(new ServerCallbacks());
     s_server_service = s_server->createService("FFE0");
     s_server_notify_char = s_server_service->createCharacteristic("FFE2", NIMBLE_PROPERTY::NOTIFY);
     s_server_write_char  = s_server_service->createCharacteristic("FFE1", NIMBLE_PROPERTY::WRITE);
@@ -896,6 +949,16 @@ void ble_manager_set_data_callback(ble_data_callback_t cb)
 void ble_manager_set_state_callback(ble_state_callback_t cb)
 {
     s_state_cb = cb;
+}
+
+/* 在主 loop 中调用：检查 BLE 回调中设置的待处理状态，在主任务上下文
+ * （非 NimBLE 任务）中安全调用 update_state → ui_update_state。
+ * 这避免了在 BLE 回调中直接获取 LVGL 互斥锁导致的死锁。 */
+void ble_manager_process_state(void)
+{
+    if (!s_state_pending) return;
+    s_state_pending = false;
+    update_state(s_pending_state, s_pending_message);
 }
 
 void ble_manager_process_data(void)

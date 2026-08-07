@@ -85,6 +85,11 @@ void setup()
 
 void loop()
 {
+    /* 处理 BLE 回调中设置的待处理状态变更（连接/断开通知）。
+     * 必须在 ble_manager_process_data() 之前调用，确保连接状态
+     * 先于数据更新通知到 UI 层。 */
+    ble_manager_process_state();
+
     /* 处理 BLE 接收队列 + 帧重组，触发 ble_data_callback */
     ble_manager_process_data();
 

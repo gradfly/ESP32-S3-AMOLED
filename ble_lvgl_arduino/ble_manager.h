@@ -64,6 +64,10 @@ void ble_manager_set_data_callback(ble_data_callback_t cb);
 void ble_manager_set_state_callback(ble_state_callback_t cb);
 void ble_manager_process_data(void);
 
+/* 在主 loop 中调用：处理 BLE 回调中设置的待处理状态变更。
+ * 将 BLE 任务中的 UI 更新延迟到主任务执行，避免 LVGL 互斥锁死锁。 */
+void ble_manager_process_state(void);
+
 /* 解析一帧完整数据 "v1,v2,...,v11;" 为整数数组。
  * data/len 由 ble_manager_process_data 在帧重组完成后通过 data 回调传入。
  * 返回实际解析出的数值个数（<=max_count），出错或无数据返回 0。 */
