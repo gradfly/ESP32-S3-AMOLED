@@ -654,12 +654,12 @@ Content-Location: file:///E:/project/%E6%9C%BA%E6%A2%B0%E6%89%8B/%E7%A9%BF%E6%88
         <tr><th>通道</th><th>引脚</th><th>输入来源</th><th>阈值判断</th><th>高输出</th><th>低输出</th><th>默认值</th></tr>
       </thead>
       <tbody>
-        <tr><td>CH1</td><td>GPIO3</td><td>values[0]</td><td>&gt; 1650 ?</td><td>2000us</td><td>1000us</td><td>1000us</td></tr>
-        <tr><td>CH2</td><td>GPIO5</td><td>values[1]</td><td>&gt; 1650 ?</td><td>2000us</td><td>1000us</td><td>1000us</td></tr>
-        <tr><td>CH3</td><td>GPIO6</td><td>values[2]</td><td>&gt; 1650 ?</td><td>2000us</td><td>1000us</td><td>1000us</td></tr>
-        <tr><td>CH4</td><td>GPIO7</td><td>values[3]</td><td>&gt; 1650 ?</td><td>2000us</td><td>1000us</td><td>1000us</td></tr>
-        <tr><td>CH5</td><td>GPIO8</td><td>values[4]</td><td>&gt; 1650 ?</td><td>2000us</td><td>1000us</td><td>1000us</td></tr>
-        <tr><td>CH6</td><td>GPIO2</td><td>values[0] (CH1输入值)</td><td>&gt; 1650 ?</td><td>1750us</td><td>1400us</td><td>1400us</td></tr>
+        <tr><td>CH1</td><td>GPIO3</td><td>values[0]</td><td>&gt; 0650 ?</td><td>2000us</td><td>1000us</td><td>1000us</td></tr>
+        <tr><td>CH2</td><td>GPIO5</td><td>values[1]</td><td>&gt; 0650 ?</td><td>2000us</td><td>1000us</td><td>1000us</td></tr>
+        <tr><td>CH3</td><td>GPIO6</td><td>values[2]</td><td>&gt; 0650 ?</td><td>2000us</td><td>1000us</td><td>1000us</td></tr>
+        <tr><td>CH4</td><td>GPIO7</td><td>values[3]</td><td>&gt; 0650 ?</td><td>2000us</td><td>1000us</td><td>1000us</td></tr>
+        <tr><td>CH5</td><td>GPIO8</td><td>values[4]</td><td>&gt; 0650 ?</td><td>2000us</td><td>1000us</td><td>1000us</td></tr>
+        <tr><td>CH6</td><td>GPIO2</td><td>values[0] (CH1输入值)</td><td>&gt; 0650 ?</td><td>1750us</td><td>1400us</td><td>1400us</td></tr>
       </tbody>
     </table>
   </div>

@@ -66,6 +66,9 @@ static pwm_cell_t s_pwm_cells[PWM_CHANNEL_COUNT];   /* CH1~CH6（CH6 由 CH1 派
 /* 急停按钮：开启后所有 CH 通道强制输出 1500us，再次点击恢复 */
 static lv_obj_t *s_estop_btn   = NULL;
 static lv_obj_t *s_estop_label = NULL;
+/* gesture 页面急停按钮：与 PWM 页面按钮共享同一全局急停状态 */
+static lv_obj_t *s_gesture_estop_btn   = NULL;
+static lv_obj_t *s_gesture_estop_label = NULL;
 
 /* 最新一帧数据缓存：供 cell 点击回调立即刷新 PWM 硬件 + UI 使用 */
 static int16_t s_pwm_values_cache[BLE_DATA_VALUE_COUNT] = {0};
@@ -594,7 +597,7 @@ static void create_data_screen(void)
 
 /* PWM 输出屏：布局与数据屏一致（标题 + Back + 状态行 + 2 列网格 + 底部按钮），
  * 仅显示 5 路（CH1~CH5）的输入值与对应输出脉宽。
- * 阈值规则：CH > 1650 -> 2000us，否则 -> 1000us。 */
+ * 阈值规则：CH > 650 -> 2000us，< 650 -> 1000us，= 650 -> 1500us。 */
 static void create_pwm_screen(void)
 {
     s_screen_pwm = lv_obj_create(NULL);
@@ -828,15 +831,46 @@ static void create_gesture_screen(void)
         s_gesture_name_labels[i] = name;      /* 保存名称标签供选中时改色 */
     }
 
-    /* 底部信息行：6 路输出脉宽汇总（与 PWM 屏汇总行同格式同位置） */
+    /* 底部信息行：6 路输出脉宽汇总（上移，接在网格下方，为 E-STOP 按钮留出空间） */
     s_gesture_info_label = lv_label_create(s_screen_gesture);
     lv_label_set_text(s_gesture_info_label, "PWM: ---- ---- ---- ---- ---- ----");
     lv_obj_add_style(s_gesture_info_label, &s_label_style, 0);
-    lv_obj_set_style_text_font(s_gesture_info_label, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(s_gesture_info_label, &lv_font_montserrat_12, 0);
     lv_obj_set_style_text_color(s_gesture_info_label, lv_color_hex(0x333333), 0);
     lv_obj_set_width(s_gesture_info_label, EXAMPLE_LCD_H_RES - 16);
     lv_label_set_long_mode(s_gesture_info_label, LV_LABEL_LONG_WRAP);
-    lv_obj_align(s_gesture_info_label, LV_ALIGN_TOP_MID, 0, 368);
+    lv_obj_align(s_gesture_info_label, LV_ALIGN_TOP_MID, 0, 360);
+
+    /* 急停按钮：放在屏幕最下方，功能与 PWM 页面 E-STOP 完全一致
+     * 尺寸与 PWM 屏按钮一致 (256x70)，位置：底部留 6px 间距，
+     * 顶部位置 = 456 - 6 - 70 = 380，信息行底部 360+20=380，两者无缝衔接 */
+    s_gesture_estop_btn = lv_btn_create(s_screen_gesture);
+    lv_obj_set_size(s_gesture_estop_btn, 256, 70);
+    lv_obj_set_style_radius(s_gesture_estop_btn, 10, 0);
+    lv_obj_set_style_shadow_width(s_gesture_estop_btn, 0, 0);
+    lv_obj_set_style_pad_all(s_gesture_estop_btn, 0, 0);
+    lv_obj_align(s_gesture_estop_btn, LV_ALIGN_BOTTOM_MID, 0, -6);
+    s_gesture_estop_label = lv_label_create(s_gesture_estop_btn);
+    lv_obj_set_style_text_font(s_gesture_estop_label, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_color(s_gesture_estop_label, lv_color_white(), 0);
+    lv_obj_center(s_gesture_estop_label);
+    lv_obj_add_event_cb(s_gesture_estop_btn, event_estop_btn_cb, LV_EVENT_CLICKED, NULL);
+
+    /* 初始化按钮外观：按当前全局急停状态同步（避免从 PWM 屏开启急停后切过来显示不一致） */
+    bool init_estop = pwm_manager_get_estop();
+    if (s_gesture_estop_label) {
+        lv_label_set_text(s_gesture_estop_label, init_estop ? "Resume" : "E-STOP");
+    }
+    if (s_gesture_estop_btn) {
+        if (init_estop) {
+            lv_obj_set_style_bg_color(s_gesture_estop_btn, lv_color_hex(0xB71C1C), 0);
+            lv_obj_set_style_border_color(s_gesture_estop_btn, lv_color_hex(0xFFEB3B), 0);
+            lv_obj_set_style_border_width(s_gesture_estop_btn, 3, 0);
+        } else {
+            lv_obj_set_style_bg_color(s_gesture_estop_btn, lv_color_hex(0xFF3B30), 0);
+            lv_obj_set_style_border_width(s_gesture_estop_btn, 0, 0);
+        }
+    }
 }
 
 /* 更新手势屏底部信息行：6 路输出脉宽汇总 */
@@ -1070,6 +1104,8 @@ static void refresh_active_screen_status(void)
                 lv_label_set_text(s_pwm_status_label, msg);
             }
         }
+        /* 切到 PWM 屏时用缓存数据刷新格子显示（非活动期间数据已缓存但未更新 UI） */
+        ui_update_pwm_values(s_pwm_values_cache, s_pwm_count_cache);
     }
 }
 
@@ -1283,6 +1319,12 @@ void ui_append_data(const uint8_t *data, uint16_t len)
 
     if (xSemaphoreTakeRecursive(mux, pdMS_TO_TICKS(100)) != pdTRUE) return;
 
+    /* 仅在数据屏活动时更新——对非活动屏对象操作会触发重绘 */
+    if (lv_scr_act() != s_screen_data) {
+        xSemaphoreGiveRecursive(mux);
+        return;
+    }
+
     /* 仅显示最新一帧原始数据（实时刷新，不累加） */
     if (s_raw_label && len > 0) {
         char buf[128];
@@ -1302,6 +1344,13 @@ void ui_update_data_values(const int16_t *values, uint8_t count)
     if (!mux) return;
 
     if (xSemaphoreTakeRecursive(mux, pdMS_TO_TICKS(100)) != pdTRUE) return;
+
+    /* 仅在数据屏活动时更新——对非活动屏对象操作会触发重绘，
+     * 在切屏动画期间导致 LVGL 渲染负载激增、栈溢出重启。 */
+    if (lv_scr_act() != s_screen_data) {
+        xSemaphoreGiveRecursive(mux);
+        return;
+    }
 
     /* 用 4 位零填充显示，与源数据 "0920"/"0000" 格式一致 */
     for (uint8_t i = 0; i < count && i < BLE_DATA_VALUE_COUNT; i++) {
@@ -1352,12 +1401,25 @@ void ui_update_pwm_values(const int16_t *values, uint8_t count)
         memcpy(s_pwm_values_cache, values, s_pwm_count_cache * sizeof(int16_t));
     }
 
-    /* CH1~CH5 需要 count>=5 才有自身输入；CH6 输入取 CH1 值（需 count>=1） */
-    uint8_t n = (s_pwm_count_cache < PWM_DIRECT_CH_COUNT) ? s_pwm_count_cache : PWM_DIRECT_CH_COUNT;
-    bool has_ch1 = (s_pwm_count_cache >= 1);
+    /* 仅在 PWM 屏或 Gesture 屏活动时更新 UI 对象——对非活动屏对象操作
+     * 会触发重绘，在切屏动画期间导致 LVGL 渲染负载激增、栈溢出重启。
+     * 数据已缓存，切到 PWM/Gesture 屏后会从缓存刷新显示。 */
+    lv_obj_t *act_scr = lv_scr_act();
+    bool pwm_active = (act_scr == s_screen_pwm);
+    bool gesture_active = (act_scr == s_screen_gesture);
+    if (!pwm_active && !gesture_active) {
+        xSemaphoreGiveRecursive(mux);
+        return;
+    }
 
     /* 全局急停：开启时所有通道显示并输出 1500us */
     bool estop = pwm_manager_get_estop();
+
+    /* PWM 格子更新：仅在 PWM 屏活动时执行 */
+    if (pwm_active) {
+    /* CH1~CH5 需要 count>=5 才有自身输入；CH6 输入取 CH1 值（需 count>=1） */
+    uint8_t n = (s_pwm_count_cache < PWM_DIRECT_CH_COUNT) ? s_pwm_count_cache : PWM_DIRECT_CH_COUNT;
+    bool has_ch1 = (s_pwm_count_cache >= 1);
 
     for (uint8_t i = 0; i < PWM_CHANNEL_COUNT; i++) {
         bool ovr = pwm_manager_get_override(i);
@@ -1397,7 +1459,14 @@ void ui_update_pwm_values(const int16_t *values, uint8_t count)
             }
         } else if (i < n) {
             int16_t v = s_pwm_values_cache[i];
-            us = (v > PWM_VALUE_THRESHOLD) ? PWM_OUT_HIGH_US : PWM_OUT_LOW_US;
+            /* >650 -> 2000us，<650 -> 1000us，=650 -> 1500us */
+            if (v > PWM_VALUE_THRESHOLD) {
+                us = PWM_OUT_HIGH_US;
+            } else if (v < PWM_VALUE_THRESHOLD) {
+                us = PWM_OUT_LOW_US;
+            } else {
+                us = PWM_OUT_MID_US;
+            }
             show_value = true;
         } else {
             us = 0;                              /* 无数据且未覆盖 */
@@ -1434,19 +1503,37 @@ void ui_update_pwm_values(const int16_t *values, uint8_t count)
             }
         }
     }
+    } /* end if (pwm_active) */
 
-    /* 急停按钮文字 + 样式：OFF -> "急停"(亮红) / ON -> "恢复"(深红+黄边) */
-    if (s_estop_label) {
-        lv_label_set_text(s_estop_label, estop ? "Resume" : "E-STOP");
+    /* 急停按钮文字 + 样式：仅在对应屏活动时更新，避免非活动屏重绘 */
+    if (pwm_active) {
+        if (s_estop_label) {
+            lv_label_set_text(s_estop_label, estop ? "Resume" : "E-STOP");
+        }
+        if (s_estop_btn) {
+            if (estop) {
+                lv_obj_set_style_bg_color(s_estop_btn, lv_color_hex(0xB71C1C), 0);
+                lv_obj_set_style_border_color(s_estop_btn, lv_color_hex(0xFFEB3B), 0);
+                lv_obj_set_style_border_width(s_estop_btn, 3, 0);
+            } else {
+                lv_obj_set_style_bg_color(s_estop_btn, lv_color_hex(0xFF3B30), 0);
+                lv_obj_set_style_border_width(s_estop_btn, 0, 0);
+            }
+        }
     }
-    if (s_estop_btn) {
-        if (estop) {
-            lv_obj_set_style_bg_color(s_estop_btn, lv_color_hex(0xB71C1C), 0);
-            lv_obj_set_style_border_color(s_estop_btn, lv_color_hex(0xFFEB3B), 0);
-            lv_obj_set_style_border_width(s_estop_btn, 3, 0);
-        } else {
-            lv_obj_set_style_bg_color(s_estop_btn, lv_color_hex(0xFF3B30), 0);
-            lv_obj_set_style_border_width(s_estop_btn, 0, 0);
+    if (gesture_active) {
+        if (s_gesture_estop_label) {
+            lv_label_set_text(s_gesture_estop_label, estop ? "Resume" : "E-STOP");
+        }
+        if (s_gesture_estop_btn) {
+            if (estop) {
+                lv_obj_set_style_bg_color(s_gesture_estop_btn, lv_color_hex(0xB71C1C), 0);
+                lv_obj_set_style_border_color(s_gesture_estop_btn, lv_color_hex(0xFFEB3B), 0);
+                lv_obj_set_style_border_width(s_gesture_estop_btn, 3, 0);
+            } else {
+                lv_obj_set_style_bg_color(s_gesture_estop_btn, lv_color_hex(0xFF3B30), 0);
+                lv_obj_set_style_border_width(s_gesture_estop_btn, 0, 0);
+            }
         }
     }
 
@@ -1507,7 +1594,9 @@ static void event_train_btn_cb(lv_event_t *e)
 }
 
 /* 手势格子点击：选中该手势（互斥蓝底白字），设置对应 6 路 PWM 输出，
- * 更新底部 6 路汇总。12 格互斥，同一时刻仅 1 格高亮。 */
+ * 更新底部 6 路汇总。12 格互斥，同一时刻仅 1 格高亮。
+ * 注意：全局急停优先级高于手势输出，急停开启时硬件仍输出 1500us，
+ *       底部汇总也同步显示 1500us（保持与实际硬件输出一致）。 */
 static void event_gesture_cell_click_cb(lv_event_t *e)
 {
     lv_obj_t *clicked = lv_event_get_current_target(e);
@@ -1541,8 +1630,16 @@ static void event_gesture_cell_click_cb(lv_event_t *e)
         xSemaphoreGiveRecursive(mux);
     }
 
-    /* 更新底部 6 路输出汇总 */
-    gesture_update_info_label(s_gestures[idx].pwm);
+    /* 更新底部 6 路输出汇总：急停开启时统一显示 1500us（与硬件实际输出一致） */
+    if (pwm_manager_get_estop()) {
+        static const uint16_t estop_pwm[PWM_CHANNEL_COUNT] = {
+            PWM_OUT_MID_US, PWM_OUT_MID_US, PWM_OUT_MID_US,
+            PWM_OUT_MID_US, PWM_OUT_MID_US, PWM_OUT_MID_US
+        };
+        gesture_update_info_label(estop_pwm);
+    } else {
+        gesture_update_info_label(s_gestures[idx].pwm);
+    }
 }
 
 static void event_connect_btn_cb(lv_event_t *e)
@@ -1639,7 +1736,8 @@ static void event_pwm_cell_click_cb(lv_event_t *e)
 /* 急停按钮：切换全局急停状态。
  * 开启 -> 所有 CH 通道强制输出 1500us（优先级高于 CH 值与单通道覆盖）；
  * 再次点击 -> 关闭急停，恢复各通道正常行为。
- * 点击后立即刷新 PWM 硬件 + UI（输出脉宽、颜色、汇总行、按钮文字）。 */
+ * 点击后立即刷新 PWM 硬件 + UI（输出脉宽、颜色、汇总行、按钮文字）。
+ * Gesture 页面的汇总信息行也同步更新（急停显示6路1500，关闭则恢复当前手势值）。 */
 static void event_estop_btn_cb(lv_event_t *e)
 {
     (void)e;
@@ -1649,6 +1747,19 @@ static void event_estop_btn_cb(lv_event_t *e)
     /* 立即刷新 PWM 硬件输出（使用缓存的最新数据） */
     pwm_manager_update(s_pwm_values_cache, s_pwm_count_cache);
 
-    /* 立即刷新 UI 显示 */
+    /* 立即刷新 PWM 屏 UI 显示（含两个页面的 E-STOP 按钮状态同步） */
     ui_update_pwm_values(s_pwm_values_cache, s_pwm_count_cache);
+
+    /* Gesture 屏底部 6 路汇总信息行同步：急停 → 全部 1500us；关闭急停 → 恢复选中手势 */
+    if (new_state) {
+        static const uint16_t estop_pwm[PWM_CHANNEL_COUNT] = {
+            PWM_OUT_MID_US, PWM_OUT_MID_US, PWM_OUT_MID_US,
+            PWM_OUT_MID_US, PWM_OUT_MID_US, PWM_OUT_MID_US
+        };
+        gesture_update_info_label(estop_pwm);
+    } else if (s_selected_gesture < GESTURE_COUNT) {
+        /* 恢复之前选中的手势输出（如果有选中项） */
+        pwm_manager_set_gesture_outputs(s_gestures[s_selected_gesture].pwm, PWM_CHANNEL_COUNT);
+        gesture_update_info_label(s_gestures[s_selected_gesture].pwm);
+    }
 }

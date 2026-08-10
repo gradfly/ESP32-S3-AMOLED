@@ -27,7 +27,7 @@ void ui_clear_data(void);
 /* 用最新一帧的 11 个数值刷新数据屏的通道网格（实时更新） */
 void ui_update_data_values(const int16_t *values, uint8_t count);
 
-/* 用最新一帧刷新 PWM 屏（取 CH1~CH5，按阈值 1650 输出 1000/2000us） */
+/* 用最新一帧刷新 PWM 屏（取 CH1~CH5，按阈值 650 输出 1000/2000us） */
 void ui_update_pwm_values(const int16_t *values, uint8_t count);
 
 /* 清空 PWM 屏的 5 路显示（恢复 "----"） */

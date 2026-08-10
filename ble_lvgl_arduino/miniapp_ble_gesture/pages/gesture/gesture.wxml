@@ -35,9 +35,17 @@
     <view class="summary-values">{{summaryText}}</view>
   </view>
 
-  <!-- 底部按钮行：归零姿态 / 断开连接 -->
+  <!-- 底部按钮行：初始姿态 / 断开连接 -->
   <view class="btn-row">
-    <button class="btn btn-gray" bindtap="onResetTap" loading="{{resetting}}">归零姿态</button>
+    <button class="btn btn-gray" bindtap="onResetTap" loading="{{resetting}}">初始姿态</button>
     <button class="btn btn-blue" bindtap="onDisconnectTap" loading="{{disconnecting}}">断开连接</button>
+  </view>
+
+  <!-- 急停按钮：放在页面最下方，功能等同 ESP32 端 E-STOP
+       开启急停 → 6路硬件全1500us中位；再次点击恢复 → 回到选中手势 -->
+  <view
+    class="estop-btn {{estopOn ? 'estop-btn-on' : ''}}"
+    bindtap="onEstopTap">
+    <text class="estop-text">{{estopOn ? '恢复按钮' : '急停按钮'}}</text>
   </view>
 </view>

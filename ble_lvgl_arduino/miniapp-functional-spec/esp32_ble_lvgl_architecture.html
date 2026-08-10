@@ -1,0 +1,198 @@
+<style>
+:root {
+  color-scheme: light;
+  --surface: #F7F7F8;
+  --surface-muted: #EFEFF2;
+  --text: #171717;
+  --text-muted: #52525B;
+  --border: rgba(23, 23, 23, 0.12);
+  --brand: #4B3FE3;
+  --brand-soft: #F2F7FF;
+  --brand-soft-strong: #E5EAFF;
+  --brand-text: #1A1759;
+  --brand-on: #FFFFFF;
+  --accent: #27D2BF;
+  --accent-text: #0F766E;
+  --radius: 8px;
+  --radius-card: 12px;
+  --spacer-4: 4px;
+  --spacer-8: 8px;
+  --spacer-12: 12px;
+  --spacer-16: 16px;
+  --spacer-20: 20px;
+  --spacer-24: 24px;
+  --font-sans: "SF Pro Text", "Noto Sans CJK SC", "PingFang SC", "WenQuanYi Micro Hei", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-strong: 600;
+  --text-caption: 12px/18px;
+  --text-body: 14px/20px;
+  --text-title: 16px/24px;
+}
+:root[data-widget-theme="dark"] {
+  color-scheme: dark;
+  --surface: #171717;
+  --surface-muted: #262626;
+  --text: #E5E5E5;
+  --text-muted: #A1A1AA;
+  --border: rgba(229, 229, 229, 0.12);
+  --brand: #6054F1;
+  --brand-soft: #1A1759;
+  --brand-soft-strong: #3C2ECA;
+  --brand-text: #CFD8FF;
+  --accent: #27D2BF;
+  --accent-text: #CCFBF1;
+}
+.widget {
+  color: var(--text);
+  background: transparent;
+  font: var(--weight-regular) var(--text-body) var(--font-sans);
+}
+.arch-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  padding: var(--spacer-20);
+}
+.arch-title {
+  font: var(--weight-strong) var(--text-title) var(--font-sans);
+  margin: 0 0 var(--spacer-4) 0;
+}
+.arch-subtitle {
+  font: var(--weight-regular) var(--text-caption) var(--font-sans);
+  color: var(--text-muted);
+  margin: 0 0 var(--spacer-16) 0;
+}
+.mod-label { font: var(--weight-medium) 13px var(--font-sans); }
+.mod-caption { font: var(--weight-regular) 11px var(--font-sans); }
+.conn-label { font: var(--weight-regular) 10px var(--font-mono); }
+.boundary-label { font: var(--weight-medium) 11px var(--font-sans); letter-spacing: 0.5px; }
+.legend-text { font: var(--weight-regular) 11px var(--font-sans); color: var(--text-muted); }
+.marker-neutral { fill: var(--text-muted); }
+.marker-brand { fill: var(--brand); }
+.marker-accent { fill: var(--accent); }
+.legend-row { display: flex; gap: var(--spacer-16); flex-wrap: wrap; margin-top: var(--spacer-12); align-items: center; }
+.legend-item { display: flex; align-items: center; gap: 6px; }
+</style>
+<div class="widget" data-dynamic-ui-widget data-template="architecture-elements" data-mounted="true">
+  <div class="arch-card">
+    <h3 class="arch-title">ESP32-S3 BLE LVGL 系统架构</h3>
+    <p class="arch-subtitle">蓝牙手势康复外骨骼显示屏 · 模块依赖与数据流</p>
+    <svg viewBox="0 0 820 580" style="width:100%;height:auto;display:block;">
+      <defs>
+        <marker id="arr-n" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto">
+          <path d="M1 1 L7 4 L1 7 Z" class="marker-neutral"/>
+        </marker>
+        <marker id="arr-b" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto">
+          <path d="M1 1 L7 4 L1 7 Z" class="marker-brand"/>
+        </marker>
+        <marker id="arr-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto">
+          <path d="M1 1 L7 4 L1 7 Z" class="marker-accent"/>
+        </marker>
+      </defs>
+
+      <!-- ESP32-S3 Boundary -->
+      <rect x="40" y="80" width="740" height="420" rx="12" fill="none" stroke="var(--border)" stroke-width="1.5" stroke-dasharray="6 4"/>
+      <text x="56" y="98" class="boundary-label" fill="var(--text-muted)">ESP32-S3 SoC</text>
+
+      <!-- External: WeChat Mini Program -->
+      <rect x="310" y="12" width="200" height="44" rx="8" fill="var(--surface-muted)" stroke="var(--border)" stroke-width="1"/>
+      <text x="410" y="32" text-anchor="middle" class="mod-label" fill="var(--text)">微信小程序</text>
+      <text x="410" y="47" text-anchor="middle" class="mod-caption" fill="var(--text-muted)">BLE 蓝牙手势控制</text>
+
+      <!-- BLE Manager -->
+      <rect x="310" y="105" width="200" height="50" rx="8" fill="var(--surface)" stroke="var(--border)" stroke-width="1"/>
+      <text x="410" y="125" text-anchor="middle" class="mod-label" fill="var(--text)">BLE Manager</text>
+      <text x="410" y="141" text-anchor="middle" class="mod-caption" fill="var(--text-muted)">扫描 · 连接 · 帧解析 (11路)</text>
+
+      <!-- Main Loop (BRAND) -->
+      <rect x="310" y="195" width="200" height="50" rx="8" fill="var(--brand-soft)" stroke="var(--brand)" stroke-width="2"/>
+      <text x="410" y="215" text-anchor="middle" class="mod-label" fill="var(--brand-text)">Main Loop (.ino)</text>
+      <text x="410" y="231" text-anchor="middle" class="mod-caption" fill="var(--brand-text)">调度中心 · 数据分发</text>
+
+      <!-- UI Main -->
+      <rect x="80" y="285" width="220" height="50" rx="8" fill="var(--surface)" stroke="var(--border)" stroke-width="1"/>
+      <text x="190" y="305" text-anchor="middle" class="mod-label" fill="var(--text)">UI Main (LVGL)</text>
+      <text x="190" y="321" text-anchor="middle" class="mod-caption" fill="var(--text-muted)">6 屏 · 互斥锁保护</text>
+
+      <!-- PWM Manager -->
+      <rect x="520" y="285" width="220" height="50" rx="8" fill="var(--surface)" stroke="var(--border)" stroke-width="1"/>
+      <text x="630" y="305" text-anchor="middle" class="mod-label" fill="var(--text)">PWM Manager</text>
+      <text x="630" y="321" text-anchor="middle" class="mod-caption" fill="var(--text-muted)">6 路舵机 PWM · 急停 · 覆盖</text>
+
+      <!-- LCD BSP -->
+      <rect x="80" y="375" width="220" height="46" rx="8" fill="var(--surface)" stroke="var(--border)" stroke-width="1"/>
+      <text x="190" y="395" text-anchor="middle" class="mod-label" fill="var(--text)">LCD BSP</text>
+      <text x="190" y="410" text-anchor="middle" class="mod-caption" fill="var(--text-muted)">SPI LCD + LVGL Flush</text>
+
+      <!-- FT3168 -->
+      <rect x="520" y="375" width="220" height="46" rx="8" fill="var(--surface)" stroke="var(--border)" stroke-width="1"/>
+      <text x="630" y="395" text-anchor="middle" class="mod-label" fill="var(--text)">FT3168</text>
+      <text x="630" y="410" text-anchor="middle" class="mod-caption" fill="var(--text-muted)">I2C 触控驱动</text>
+
+      <!-- External: LCD Display -->
+      <rect x="80" y="478" width="200" height="44" rx="8" fill="var(--surface-muted)" stroke="var(--border)" stroke-width="1"/>
+      <text x="180" y="506" text-anchor="middle" class="mod-label" fill="var(--text)">LCD 显示屏</text>
+
+      <!-- External: Servos/ESC -->
+      <rect x="310" y="478" width="200" height="44" rx="8" fill="var(--surface-muted)" stroke="var(--border)" stroke-width="1"/>
+      <text x="410" y="506" text-anchor="middle" class="mod-label" fill="var(--text)">舵机 / ESC ×6</text>
+
+      <!-- External: Touch Panel -->
+      <rect x="520" y="478" width="200" height="44" rx="8" fill="var(--surface-muted)" stroke="var(--border)" stroke-width="1"/>
+      <text x="620" y="506" text-anchor="middle" class="mod-label" fill="var(--text)">触控面板</text>
+
+      <!-- Connectors -->
+      <!-- 1. WeChat -> BLE (BLE wireless) -->
+      <path d="M 410,56 L 410,105" fill="none" stroke="var(--text-muted)" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#arr-n)"/>
+      <text x="420" y="84" class="conn-label" fill="var(--text-muted)">BLE 2.4GHz</text>
+
+      <!-- 2. BLE -> Main (callback) -->
+      <path d="M 410,155 L 410,195" fill="none" stroke="var(--text-muted)" stroke-width="1.5" marker-end="url(#arr-n)"/>
+      <text x="420" y="180" class="conn-label" fill="var(--text-muted)">callback</text>
+
+      <!-- 3. Main -> UI (brand primary) -->
+      <path d="M 350,245 L 350,265 L 190,265 L 190,285" fill="none" stroke="var(--brand)" stroke-width="2" marker-end="url(#arr-b)"/>
+      <text x="270" y="259" text-anchor="middle" class="conn-label" fill="var(--brand)">ui_update_*</text>
+
+      <!-- 4. Main -> PWM -->
+      <path d="M 470,245 L 470,265 L 630,265 L 630,285" fill="none" stroke="var(--text-muted)" stroke-width="1.5" marker-end="url(#arr-n)"/>
+      <text x="550" y="259" text-anchor="middle" class="conn-label" fill="var(--text-muted)">pwm_update</text>
+
+      <!-- 5. UI -> LCD BSP (flush, down) -->
+      <path d="M 175,335 L 175,375" fill="none" stroke="var(--text-muted)" stroke-width="1.5" marker-end="url(#arr-n)"/>
+      <text x="135" y="360" class="conn-label" fill="var(--text-muted)">flush</text>
+
+      <!-- 6. LCD BSP -> UI (touch, up, dashed) -->
+      <path d="M 215,375 L 215,335" fill="none" stroke="var(--text-muted)" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#arr-n)"/>
+      <text x="225" y="360" class="conn-label" fill="var(--text-muted)">touch</text>
+
+      <!-- 7. LCD BSP -> LCD (SPI) -->
+      <path d="M 180,421 L 180,478" fill="none" stroke="var(--text-muted)" stroke-width="1.5" marker-end="url(#arr-n)"/>
+      <text x="190" y="455" class="conn-label" fill="var(--text-muted)">SPI</text>
+
+      <!-- 8. LCD BSP -> FT3168 (I2C) -->
+      <path d="M 300,398 L 520,398" fill="none" stroke="var(--text-muted)" stroke-width="1.5" marker-end="url(#arr-n)"/>
+      <text x="410" y="392" text-anchor="middle" class="conn-label" fill="var(--text-muted)">I2C</text>
+
+      <!-- 9. Touch -> FT3168 (sense, up) -->
+      <path d="M 620,478 L 620,421" fill="none" stroke="var(--text-muted)" stroke-width="1.5" marker-end="url(#arr-n)"/>
+      <text x="630" y="455" class="conn-label" fill="var(--text-muted)">sense</text>
+
+      <!-- 10. PWM -> Servos (GPIO) -->
+      <path d="M 560,335 L 560,455 L 410,455 L 410,478" fill="none" stroke="var(--text-muted)" stroke-width="1.5" marker-end="url(#arr-n)"/>
+      <text x="485,449" class="conn-label" fill="var(--text-muted)"><tspan x="485" y="449">GPIO 50Hz</tspan></text>
+
+      <!-- 11. UI -> PWM (override/E-STOP, accent dashed) -->
+      <path d="M 300,310 L 520,310" fill="none" stroke="var(--accent)" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#arr-a)"/>
+      <text x="410" y="304" text-anchor="middle" class="conn-label" fill="var(--accent)">override / E-STOP</text>
+    </svg>
+    <div class="legend-row">
+      <div class="legend-item"><svg width="28" height="10"><line x1="2" y1="5" x2="22" y2="5" stroke="var(--text-muted)" stroke-width="1.5"/><polygon points="20,2 27,5 20,8" fill="var(--text-muted)"/></svg><span class="legend-text">数据流</span></div>
+      <div class="legend-item"><svg width="28" height="10"><line x1="2" y1="5" x2="22" y2="5" stroke="var(--text-muted)" stroke-width="1.5" stroke-dasharray="4 3"/><polygon points="20,2 27,5 20,8" fill="var(--text-muted)"/></svg><span class="legend-text">无线 / 异步</span></div>
+      <div class="legend-item"><svg width="28" height="10"><line x1="2" y1="5" x2="22" y2="5" stroke="var(--brand)" stroke-width="2"/><polygon points="20,2 27,5 20,8" fill="var(--brand)"/></svg><span class="legend-text">主数据路径</span></div>
+      <div class="legend-item"><svg width="28" height="10"><line x1="2" y1="5" x2="22" y2="5" stroke="var(--accent)" stroke-width="1.5" stroke-dasharray="4 3"/><polygon points="20,2 27,5 20,8" fill="var(--accent)"/></svg><span class="legend-text">用户交互</span></div>
+    </div>
+  </div>
+</div>

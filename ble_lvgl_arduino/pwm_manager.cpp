@@ -159,10 +159,17 @@ void pwm_manager_update(const int16_t *values, uint8_t count)
             us = PWM_OUT_MID_US;        /* 单通道覆盖：1500us */
             tag = "[OVR]";
         } else if (i < PWM_DIRECT_CH_COUNT) {
-            /* CH1~CH5：直接映射各自 BLE 输入值 */
+            /* CH1~CH5：直接映射各自 BLE 输入值
+             * >650 -> 2000us，<650 -> 1000us，=650 -> 1500us */
             if (!has_5) continue;       /* 数据不足，保持上一次输出 */
             int16_t v = values[i];
-            us = (v > PWM_VALUE_THRESHOLD) ? PWM_OUT_HIGH_US : PWM_OUT_LOW_US;
+            if (v > PWM_VALUE_THRESHOLD) {
+                us = PWM_OUT_HIGH_US;
+            } else if (v < PWM_VALUE_THRESHOLD) {
+                us = PWM_OUT_LOW_US;
+            } else {
+                us = PWM_OUT_MID_US;
+            }
             tag = "auto";
         } else {
             /* CH6：由 CH1 输入值派生（1750/1400us）。
