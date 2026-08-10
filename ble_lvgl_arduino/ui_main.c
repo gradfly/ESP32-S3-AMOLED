@@ -19,7 +19,7 @@ static lv_obj_t *s_screen_gesture = NULL;   /* 数字手势屏：12 格图片网
 static lv_obj_t *s_screen_gesture_recv = NULL;  /* 手势识别屏：BLE 数据对应手势图形 */
 
 /* 手势识别屏 UI 对象 */
-static lv_obj_t *s_gesture_recv_img = NULL;     /* 手势图片（4x 放大显示） */
+static lv_obj_t *s_gesture_recv_img = NULL;     /* 手势图片（3x 放大显示） */
 static lv_obj_t *s_gesture_recv_name = NULL;    /* 手势名称标签（Gesture 1 等） */
 static lv_obj_t *s_gesture_recv_status = NULL;  /* 顶部状态行：连接状态 */
 static lv_obj_t *s_gesture_recv_values = NULL;  /* 5 路通道值 + 模式显示 */
@@ -310,7 +310,7 @@ static void setup_screen_swipe(lv_obj_t *screen)
 /* ====== 手势屏专用边缘滑动（不在线性顺序中） ======
  * 手势屏由主屏 "自主训练" 按钮进入，仅右边缘左滑返回主屏。
  * 不复用 swipe_do_switch（手势屏不在 s_swipe_order 中，cur_idx 会<0）。
- * 返回主屏前：6 路 PWM 输出回归姿势 1700/2000/2000/2000/2000/2000us。 */
+ * 返回主屏前：6 路 PWM 输出回归姿势 1750/2000/2000/2000/2000/2000us。 */
 static const uint16_t s_gesture_rest_pose[PWM_CHANNEL_COUNT] = {1750,2000,2000,2000,2000,2000};
 
 static void gesture_swipe_to_main(void)
@@ -762,7 +762,7 @@ typedef struct {
     uint16_t            pwm[PWM_CHANNEL_COUNT];  /* 点击该手势时 6 路输出脉宽(us) */
 } gesture_entry_t;
 static const gesture_entry_t s_gestures[GESTURE_COUNT] = {
-    { &img_gesture_1,    "1",    {1000,1000,1000,1000,1000,1400} },
+    { &img_gesture_1,    "1",    {1000,2000,1000,1000,1000,1400} },
     { &img_gesture_2,    "2",    {1000,2000,2000,1000,1000,1400} },
     { &img_gesture_3,    "3",    {1000,2000,2000,2000,1000,1400} },
     { &img_gesture_4,    "4",    {1000,2000,2000,2000,2000,1400} },
@@ -771,7 +771,7 @@ static const gesture_entry_t s_gestures[GESTURE_COUNT] = {
     { &img_gesture_7,    "7",    {2000,2000,2000,1000,1000,1750} },
     { &img_gesture_8,    "8",    {2000,2000,1000,1000,1000,1750} },
     { &img_gesture_10,   "10",   {1000,1000,1000,1000,1000,1400} },
-    { &img_gesture_ok,   "ok",   {1000,2000,2000,2000,2000,1400} },
+    { &img_gesture_ok,   "ok",   {1000,1000,2000,2000,2000,1400} },
     { &img_gesture_good, "good", {2000,1000,1000,1000,1000,1750} },
     { &img_gesture_love, "love", {2000,2000,1000,1000,2000,1750} },
 };
@@ -894,7 +894,7 @@ static void create_gesture_screen(void)
 #define GESTURE_RECV_MAP_SIZE   12
 
 typedef struct {
-    bool pattern[5];              /* true = >650, false = <=650 */
+    bool pattern[5];              /* true = <650, false = >650 */
     const lv_img_dsc_t *img;
     const char *name;
 } gesture_recv_entry_t;
@@ -910,7 +910,7 @@ static const gesture_recv_entry_t s_gesture_recv_map[GESTURE_RECV_MAP_SIZE] = {
     {{true,  true,  false, false, false}, &img_gesture_8,    "Gesture 8"},   /* 11000 */
     {{false, false, false, false, false}, &img_gesture_10,   "Gesture 10"},  /* 00000 */
     {{true,  false, false, false, false}, &img_gesture_good, "Good"},        /* 10000 */
-    {{true,  true,  true,  true,  false}, &img_gesture_ok,   "OK"},          /* 11110 */
+    {{false, false, true,  true,  true},  &img_gesture_ok,   "OK"},          /* 00111 */
     {{true,  true,  false, false, true},  &img_gesture_love, "Love"},        /* 11001 */
 };
 
@@ -933,11 +933,11 @@ static void create_gesture_recv_screen(void)
     lv_obj_set_style_text_color(s_gesture_recv_status, lv_color_hex(0x34C759), 0);
     lv_obj_align(s_gesture_recv_status, LV_ALIGN_TOP_MID, 0, 48);
 
-    /* 手势图片：居中，4x 放大（36*4=144px） */
+    /* 手势图片：居中，3x 放大（36*3=144px） */
     s_gesture_recv_img = lv_img_create(s_screen_gesture_recv);
     lv_img_set_src(s_gesture_recv_img, &img_gesture_1);
-    lv_img_set_zoom(s_gesture_recv_img, 256 * 4);
-    lv_obj_align(s_gesture_recv_img, LV_ALIGN_TOP_MID, 0, 90);
+    lv_img_set_zoom(s_gesture_recv_img, 256 * 3);
+    lv_obj_align(s_gesture_recv_img, LV_ALIGN_TOP_MID, 0, 150);
 
     /* 手势名称标签 */
     s_gesture_recv_name = lv_label_create(s_screen_gesture_recv);
@@ -965,6 +965,18 @@ static void create_gesture_recv_screen(void)
     lv_obj_set_style_text_font(disconnect_label, &lv_font_montserrat_18, 0);
     lv_obj_center(disconnect_label);
     lv_obj_add_event_cb(disconnect_btn, event_disconnect_btn_cb, LV_EVENT_CLICKED, NULL);
+    
+    /* 底部 Clear 按钮 */
+    lv_obj_t *clear_btn = lv_btn_create(s_screen_gesture_recv);
+    lv_obj_add_style(clear_btn, &s_btn_style, 0);
+    lv_obj_set_style_bg_color(clear_btn, lv_color_hex(0x8E8E93), 0);
+    lv_obj_set_size(clear_btn, 120, 42);
+    lv_obj_align(clear_btn, LV_ALIGN_BOTTOM_RIGHT, -10, -10);
+    lv_obj_t *clear_label = lv_label_create(clear_btn);
+    lv_label_set_text(clear_label, "Clear");
+    lv_obj_set_style_text_font(clear_label, &lv_font_montserrat_18, 0);
+    lv_obj_center(clear_label);
+    lv_obj_add_event_cb(clear_btn, event_clear_pwm_cb, LV_EVENT_CLICKED, NULL);
 }
 
 /* 更新手势屏底部信息行：6 路输出脉宽汇总 */
@@ -1336,8 +1348,8 @@ void ui_update_state(ble_state_t state, const char *message)
                 }
                 pwm_manager_set_estop(false);
                 pwm_manager_set_gesture_mode(false);
-                /* 触发一次 pwm_manager_update(NULL,0) → 全通道按默认低脉宽输出 */
-                pwm_manager_update(NULL, 0);
+                /* 触发一次 pwm_manager_update(NULL,1000) → 全通道按默认高脉宽输出 */
+                pwm_manager_update(NULL, 1000);
             } else {
                 /* 外设断开：跳回首页（原有行为） */
                 ui_switch_screen(UI_SCREEN_MAIN);
@@ -1568,10 +1580,10 @@ void ui_update_pwm_values(const int16_t *values, uint8_t count)
             }
         } else if (i < n) {
             int16_t v = s_pwm_values_cache[i];
-            /* >650 -> 2000us，<650 -> 1000us，=650 -> 1500us */
-            if (v > PWM_VALUE_THRESHOLD) {
+            /* <650 -> 2000us，>650 -> 1000us，=650 -> 1500us */
+            if (v < PWM_VALUE_THRESHOLD) {
                 us = PWM_OUT_HIGH_US;
-            } else if (v < PWM_VALUE_THRESHOLD) {
+            } else if (v > PWM_VALUE_THRESHOLD) {
                 us = PWM_OUT_LOW_US;
             } else {
                 us = PWM_OUT_MID_US;
@@ -1716,7 +1728,7 @@ void ui_update_gesture_recv(const int16_t *values, uint8_t count)
     int pat_bits[5];
 
     for (int i = 0; i < 5; i++) {
-        pattern[i] = (values[i] > GESTURE_RECV_THRESHOLD);
+        pattern[i] = (values[i] < GESTURE_RECV_THRESHOLD);
         pat_bits[i] = pattern[i] ? 1 : 0;
     }
 
@@ -1742,9 +1754,9 @@ void ui_update_gesture_recv(const int16_t *values, uint8_t count)
     if (matched >= 0) {
         if (s_gesture_recv_img) {
             lv_obj_clear_flag(s_gesture_recv_img, LV_OBJ_FLAG_HIDDEN);
+            /* 只更新图片源，zoom 和 align 由 create_gesture_recv_screen() 统一设置，
+             * 避免每次刷新都覆盖，改位置只需要调 create 里的 lv_obj_align 即可。 */
             lv_img_set_src(s_gesture_recv_img, s_gesture_recv_map[matched].img);
-            lv_img_set_zoom(s_gesture_recv_img, 256 * 4);
-            lv_obj_align(s_gesture_recv_img, LV_ALIGN_TOP_MID, 0, 90);
         }
         if (s_gesture_recv_name) {
             lv_label_set_text(s_gesture_recv_name, s_gesture_recv_map[matched].name);

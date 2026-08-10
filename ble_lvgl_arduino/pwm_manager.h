@@ -31,7 +31,7 @@ extern "C" {
 #define PWM_DIRECT_CH_COUNT     5
 
 /* 阈值与输出脉宽（单位：微秒 us）
- * CH1~CH5：CH 值 > 阈值  -> 2000us；CH 值 < 阈值 -> 1000us；CH 值 = 阈值 -> 1500us
+ * CH1~CH5：CH 值 < 阈值  -> 2000us；CH 值 > 阈值 -> 1000us；CH 值 = 阈值 -> 1500us
  * CH6    ：由 CH1 输入值派生 —— CH1 高(>阈值) -> 1750us；CH1 低(<=阈值) -> 1400us
  *          （CH6 基于 CH1 的输入值而非输出值，故点击 CH1 覆盖不影响 CH6）
  * 手动覆盖 / 全局急停 -> 输出 1500us（中位/停转）
@@ -78,7 +78,7 @@ void pwm_manager_set_gesture_mode(bool on);
 bool pwm_manager_get_gesture_mode(void);
 
 /* 设置手势模式的 6 路输出脉宽（us）并立即刷新硬件。
- * us  : 6 元素数组（CH1~CH6 脉宽，如 1450/1700/2000/1000 等）。
+ * us  : 6 元素数组（CH1~CH6 脉宽，如 1750/1500/2000/1000 等）。
  * count: 数组有效长度（应 >= 6）。
  * 仅当手势模式开启时由 pwm_manager_update() 读取生效；急停开启时仍强制 1500us。
  * 可在任意时刻调用（未开启手势模式时仅缓存，不刷新硬件）。 */

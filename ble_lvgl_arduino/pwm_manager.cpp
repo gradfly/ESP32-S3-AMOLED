@@ -129,10 +129,10 @@ void pwm_manager_init(void)
             ESP_LOGE(TAG, "ledcAttach failed: ch=%u pin=%u", i + 1, pin);
             continue;
         }
-        /* 上电默认输出各自"低"脉宽，避免舵机抖动到中位：
-         * CH1~CH5 -> 1000us，CH6 -> 1400us */
-        uint16_t default_us = (i < PWM_DIRECT_CH_COUNT) ? PWM_OUT_LOW_US
-                                                        : PWM_OUT_CH6_LOW_US;
+        /* 上电默认输出各自"高"脉宽，避免舵机抖动到中位：
+         * CH1~CH5 -> 2000us，CH6 -> 1750us */
+        uint16_t default_us = (i < PWM_DIRECT_CH_COUNT) ? PWM_OUT_HIGH_US
+                                                        : PWM_OUT_CH6_HIGH_US;
         uint32_t duty = pwm_us_to_duty(default_us);
         ledcWrite(pin, duty);
         s_pwm_us[i] = default_us;
@@ -163,12 +163,12 @@ void pwm_manager_update(const int16_t *values, uint8_t count)
             tag = "[OVR]";
         } else if (i < PWM_DIRECT_CH_COUNT) {
             /* CH1~CH5：直接映射各自 BLE 输入值
-             * >650 -> 2000us，<650 -> 1000us，=650 -> 1500us */
+             * <650 -> 2000us，>650 -> 1000us，=650 -> 1500us */
             if (!has_5) continue;       /* 数据不足，保持上一次输出 */
             int16_t v = values[i];
-            if (v > PWM_VALUE_THRESHOLD) {
+            if (v < PWM_VALUE_THRESHOLD) {
                 us = PWM_OUT_HIGH_US;
-            } else if (v < PWM_VALUE_THRESHOLD) {
+            } else if (v > PWM_VALUE_THRESHOLD) {
                 us = PWM_OUT_LOW_US;
             } else {
                 us = PWM_OUT_MID_US;
