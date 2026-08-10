@@ -16,6 +16,13 @@ static lv_obj_t *s_screen_list = NULL;
 static lv_obj_t *s_screen_data = NULL;
 static lv_obj_t *s_screen_pwm = NULL;
 static lv_obj_t *s_screen_gesture = NULL;   /* 数字手势屏：12 格图片网格 */
+static lv_obj_t *s_screen_gesture_recv = NULL;  /* 手势识别屏：BLE 数据对应手势图形 */
+
+/* 手势识别屏 UI 对象 */
+static lv_obj_t *s_gesture_recv_img = NULL;     /* 手势图片（4x 放大显示） */
+static lv_obj_t *s_gesture_recv_name = NULL;    /* 手势名称标签（Gesture 1 等） */
+static lv_obj_t *s_gesture_recv_status = NULL;  /* 顶部状态行：连接状态 */
+static lv_obj_t *s_gesture_recv_values = NULL;  /* 5 路通道值 + 模式显示 */
 
 /* 手势屏状态：需在 gesture_swipe_to_main() 等早期定义的函数前声明 */
 #define GESTURE_COUNT 12
@@ -101,14 +108,14 @@ static void set_cjk_font(lv_obj_t *obj)
 }
 
 /* ====== 屏幕边缘滑动切换 ======
- * 主屏 / 数据屏 / PWM 屏 线性顺序：Main <-> Data <-> PWM。
+ * 主屏 / 数据屏 / PWM 屏 / 手势识别屏 线性顺序：Main <-> Data <-> PWM <-> GestureRecv。
  * 左边缘起手右滑 -> 上一屏；右边缘起手左滑 -> 下一屏。
- * 手势屏不在此线性顺序中：由主屏 "自主训练" 按钮进入，右边缘左滑返回主屏。
+ * 手势训练屏不在此线性顺序中：由主屏 "自主训练" 按钮进入，右边缘左滑返回主屏。
  * 按下需落在屏幕空白区域（非按钮/列表等子对象），否则手势事件不会到达屏幕。 */
 #define SWIPE_EDGE_WIDTH    80      /* 距左右边缘 80px 内起手才算边缘滑动 */
 #define SWIPE_ANIM_MS       300     /* 切屏滑动动画时长 */
 #define SWIPE_DEBOUNCE_MS   400     /* 防抖：两次滑动最小间隔（>动画时长） */
-static const ui_screen_t s_swipe_order[] = {UI_SCREEN_MAIN, UI_SCREEN_DATA, UI_SCREEN_PWM};
+static const ui_screen_t s_swipe_order[] = {UI_SCREEN_MAIN, UI_SCREEN_DATA, UI_SCREEN_PWM, UI_SCREEN_GESTURE_RECV};
 #define SWIPE_ORDER_LEN  (sizeof(s_swipe_order) / sizeof(s_swipe_order[0]))
 
 static lv_point_t s_swipe_start_pt = {0};
@@ -151,6 +158,7 @@ static void create_data_screen(void);
 static void create_uuid_screen(void);
 static void create_pwm_screen(void);
 static void create_gesture_screen(void);
+static void create_gesture_recv_screen(void);
 
 /* ====== 边缘滑动切换屏幕：实现 ====== */
 
@@ -172,6 +180,7 @@ static void swipe_do_switch(bool go_next)
         case UI_SCREEN_DATA:    scr = s_screen_data;    break;
         case UI_SCREEN_PWM:     scr = s_screen_pwm;     break;
         case UI_SCREEN_GESTURE: scr = s_screen_gesture; break;
+        case UI_SCREEN_GESTURE_RECV: scr = s_screen_gesture_recv; break;
         default: break;
         }
         if (scr == active) { cur_idx = i; break; }
@@ -187,6 +196,7 @@ static void swipe_do_switch(bool go_next)
     case UI_SCREEN_DATA:    target_scr = s_screen_data;    break;
     case UI_SCREEN_PWM:     target_scr = s_screen_pwm;     break;
     case UI_SCREEN_GESTURE: target_scr = s_screen_gesture; break;
+    case UI_SCREEN_GESTURE_RECV: target_scr = s_screen_gesture_recv; break;
     default: return;
     }
 
@@ -407,12 +417,15 @@ void ui_init(void)
     create_uuid_screen();
     create_pwm_screen();
     create_gesture_screen();
+    create_gesture_recv_screen();
 
-    /* 主屏 / 数据屏：含透明热区的完整边缘滑动（线性顺序 Main<->Data<->PWM） */
+    /* 主屏 / 数据屏：含透明热区的完整边缘滑动（线性顺序 Main<->Data<->PWM<->GestureRecv） */
     setup_screen_swipe(s_screen_main);
     setup_screen_swipe(s_screen_data);
     /* PWM 屏仅用屏幕级手势（无热区）：格子自身需接收点击，热区会阻挡点击 */
     setup_screen_swipe_base(s_screen_pwm);
+    /* 手势识别屏仅用屏幕级手势（无热区），与 PWM 屏一致 */
+    setup_screen_swipe_base(s_screen_gesture_recv);
     /* 手势屏不在线性顺序中：由主屏 "自主训练" 按钮进入，右边缘左滑返回主屏 */
     setup_gesture_screen_swipe(s_screen_gesture);
 
@@ -873,6 +886,87 @@ static void create_gesture_screen(void)
     }
 }
 
+/* ====== 手势识别屏：根据 BLE 前 5 路数据匹配并显示手势图形 ======
+ * 阈值 650：value > 650 为高（1），value <= 650 为低（0）。
+ * 5 路通道组合为 5 位模式，查表匹配对应手势图片。
+ * 用户示例：<650, >650, <650, <650, <650 → 模式 01000 → Gesture 1 */
+#define GESTURE_RECV_THRESHOLD  650
+#define GESTURE_RECV_MAP_SIZE   12
+
+typedef struct {
+    bool pattern[5];              /* true = >650, false = <=650 */
+    const lv_img_dsc_t *img;
+    const char *name;
+} gesture_recv_entry_t;
+
+static const gesture_recv_entry_t s_gesture_recv_map[GESTURE_RECV_MAP_SIZE] = {
+    {{false, true,  false, false, false}, &img_gesture_1,    "Gesture 1"},   /* 01000 */
+    {{false, true,  true,  false, false}, &img_gesture_2,    "Gesture 2"},   /* 01100 */
+    {{false, true,  true,  true,  false}, &img_gesture_3,    "Gesture 3"},   /* 01110 */
+    {{false, true,  true,  true,  true},  &img_gesture_4,    "Gesture 4"},   /* 01111 */
+    {{true,  true,  true,  true,  true},  &img_gesture_5,    "Gesture 5"},   /* 11111 */
+    {{true,  false, false, false, true},  &img_gesture_6,    "Gesture 6"},   /* 10001 */
+    {{true,  true,  true,  false, false}, &img_gesture_7,    "Gesture 7"},   /* 11100 */
+    {{true,  true,  false, false, false}, &img_gesture_8,    "Gesture 8"},   /* 11000 */
+    {{false, false, false, false, false}, &img_gesture_10,   "Gesture 10"},  /* 00000 */
+    {{true,  false, false, false, false}, &img_gesture_good, "Good"},        /* 10000 */
+    {{true,  true,  true,  true,  false}, &img_gesture_ok,   "OK"},          /* 11110 */
+    {{true,  true,  false, false, true},  &img_gesture_love, "Love"},        /* 11001 */
+};
+
+static void create_gesture_recv_screen(void)
+{
+    s_screen_gesture_recv = lv_obj_create(NULL);
+    lv_obj_set_size(s_screen_gesture_recv, EXAMPLE_LCD_H_RES, EXAMPLE_LCD_V_RES);
+    lv_obj_set_style_bg_color(s_screen_gesture_recv, lv_color_hex(0xFFFFFF), 0);
+
+    /* 标题 */
+    lv_obj_t *title = lv_label_create(s_screen_gesture_recv);
+    lv_label_set_text(title, "Gesture");
+    lv_obj_add_style(title, &s_title_style, 0);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 12);
+
+    /* 顶部状态行：连接状态（与数据屏/PWM屏同步） */
+    s_gesture_recv_status = lv_label_create(s_screen_gesture_recv);
+    lv_label_set_text(s_gesture_recv_status, "Connecting...");
+    lv_obj_add_style(s_gesture_recv_status, &s_label_style, 0);
+    lv_obj_set_style_text_color(s_gesture_recv_status, lv_color_hex(0x34C759), 0);
+    lv_obj_align(s_gesture_recv_status, LV_ALIGN_TOP_MID, 0, 48);
+
+    /* 手势图片：居中，4x 放大（36*4=144px） */
+    s_gesture_recv_img = lv_img_create(s_screen_gesture_recv);
+    lv_img_set_src(s_gesture_recv_img, &img_gesture_1);
+    lv_img_set_zoom(s_gesture_recv_img, 256 * 4);
+    lv_obj_align(s_gesture_recv_img, LV_ALIGN_TOP_MID, 0, 90);
+
+    /* 手势名称标签 */
+    s_gesture_recv_name = lv_label_create(s_screen_gesture_recv);
+    lv_label_set_text(s_gesture_recv_name, "Gesture 1");
+    lv_obj_set_style_text_font(s_gesture_recv_name, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_color(s_gesture_recv_name, lv_color_hex(0x1A1A1A), 0);
+    lv_obj_align(s_gesture_recv_name, LV_ALIGN_TOP_MID, 0, 250);
+
+    /* 5 路通道值 + 模式显示 */
+    s_gesture_recv_values = lv_label_create(s_screen_gesture_recv);
+    lv_label_set_text(s_gesture_recv_values,
+                      "CH1:----  CH2:----  CH3:----\nCH4:----  CH5:----\nPattern: - - - - -");
+    lv_obj_set_style_text_font(s_gesture_recv_values, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(s_gesture_recv_values, lv_color_hex(0x8E8E93), 0);
+    lv_obj_set_style_text_align(s_gesture_recv_values, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_align(s_gesture_recv_values, LV_ALIGN_TOP_MID, 0, 290);
+
+    /* 底部 Disconnect 按钮 */
+    lv_obj_t *disconnect_btn = lv_btn_create(s_screen_gesture_recv);
+    lv_obj_add_style(disconnect_btn, &s_btn_style, 0);
+    lv_obj_set_size(disconnect_btn, 120, 42);
+    lv_obj_align(disconnect_btn, LV_ALIGN_BOTTOM_LEFT, 10, -10);
+    lv_obj_t *disconnect_label = lv_label_create(disconnect_btn);
+    lv_label_set_text(disconnect_label, "Disconnect");
+    lv_obj_set_style_text_font(disconnect_label, &lv_font_montserrat_18, 0);
+    lv_obj_center(disconnect_label);
+    lv_obj_add_event_cb(disconnect_btn, event_disconnect_btn_cb, LV_EVENT_CLICKED, NULL);
+}
+
 /* 更新手势屏底部信息行：6 路输出脉宽汇总 */
 static void gesture_update_info_label(const uint16_t *us)
 {
@@ -1106,6 +1200,18 @@ static void refresh_active_screen_status(void)
         }
         /* 切到 PWM 屏时用缓存数据刷新格子显示（非活动期间数据已缓存但未更新 UI） */
         ui_update_pwm_values(s_pwm_values_cache, s_pwm_count_cache);
+    } else if (scr == s_screen_gesture_recv) {
+        if (s_gesture_recv_status) {
+            if (s_last_state == BLE_STATE_CONNECTED && s_connected_name[0]) {
+                char buf[48];
+                snprintf(buf, sizeof(buf), "Connected: %s", s_connected_name);
+                lv_label_set_text(s_gesture_recv_status, buf);
+            } else {
+                lv_label_set_text(s_gesture_recv_status, msg);
+            }
+        }
+        /* 切到手势识别屏时用缓存数据刷新手势显示 */
+        ui_update_gesture_recv(s_pwm_values_cache, s_pwm_count_cache);
     }
 }
 
@@ -1158,6 +1264,9 @@ void ui_switch_screen(ui_screen_t screen)
         break;
     case UI_SCREEN_GESTURE:
         lv_scr_load(s_screen_gesture);
+        break;
+    case UI_SCREEN_GESTURE_RECV:
+        lv_scr_load(s_screen_gesture_recv);
         break;
     }
 
@@ -1572,6 +1681,81 @@ void ui_clear_pwm(void)
     /* 急停按钮文字复位（不影响急停状态本身——状态由 pwm_manager 维护） */
     if (s_estop_label) {
         lv_label_set_text(s_estop_label, pwm_manager_get_estop() ? "Resume" : "E-STOP"); 
+    }
+
+    xSemaphoreGiveRecursive(mux);
+}
+
+void ui_update_gesture_recv(const int16_t *values, uint8_t count)
+{
+    SemaphoreHandle_t mux = get_lvgl_mutex();
+    if (!mux) return;
+    if (xSemaphoreTakeRecursive(mux, pdMS_TO_TICKS(100)) != pdTRUE) return;
+
+    /* 仅在手势识别屏活动时更新 UI 对象——对非活动屏对象操作会触发重绘，
+     * 在切屏动画期间导致 LVGL 渲染负载激增、栈溢出重启（与 PWM 屏修复一致）。
+     * 数据已在 s_pwm_values_cache 中缓存，切到本屏后由 refresh_active_screen_status 刷新。 */
+    if (lv_scr_act() != s_screen_gesture_recv) {
+        xSemaphoreGiveRecursive(mux);
+        return;
+    }
+
+    /* 数据不足 5 路时显示等待 */
+    if (!values || count < 5) {
+        if (s_gesture_recv_img) lv_obj_add_flag(s_gesture_recv_img, LV_OBJ_FLAG_HIDDEN);
+        if (s_gesture_recv_name) lv_label_set_text(s_gesture_recv_name, "Waiting...");
+        if (s_gesture_recv_values) lv_label_set_text(s_gesture_recv_values,
+            "CH1:----  CH2:----  CH3:----\nCH4:----  CH5:----\nPattern: - - - - -");
+        xSemaphoreGiveRecursive(mux);
+        return;
+    }
+
+    /* 计算 5 位模式并构建显示文本 */
+    bool pattern[5];
+    char val_buf[96];
+    int pat_bits[5];
+
+    for (int i = 0; i < 5; i++) {
+        pattern[i] = (values[i] > GESTURE_RECV_THRESHOLD);
+        pat_bits[i] = pattern[i] ? 1 : 0;
+    }
+
+    snprintf(val_buf, sizeof(val_buf),
+             "CH1:%d  CH2:%d  CH3:%d\nCH4:%d  CH5:%d\nPattern: %d %d %d %d %d",
+             values[0], values[1], values[2], values[3], values[4],
+             pat_bits[0], pat_bits[1], pat_bits[2], pat_bits[3], pat_bits[4]);
+
+    /* 查找匹配的手势 */
+    int matched = -1;
+    for (int i = 0; i < GESTURE_RECV_MAP_SIZE; i++) {
+        bool match = true;
+        for (int j = 0; j < 5; j++) {
+            if (s_gesture_recv_map[i].pattern[j] != pattern[j]) {
+                match = false;
+                break;
+            }
+        }
+        if (match) { matched = i; break; }
+    }
+
+    /* 更新图片和名称 */
+    if (matched >= 0) {
+        if (s_gesture_recv_img) {
+            lv_obj_clear_flag(s_gesture_recv_img, LV_OBJ_FLAG_HIDDEN);
+            lv_img_set_src(s_gesture_recv_img, s_gesture_recv_map[matched].img);
+            lv_img_set_zoom(s_gesture_recv_img, 256 * 4);
+            lv_obj_align(s_gesture_recv_img, LV_ALIGN_TOP_MID, 0, 90);
+        }
+        if (s_gesture_recv_name) {
+            lv_label_set_text(s_gesture_recv_name, s_gesture_recv_map[matched].name);
+        }
+    } else {
+        if (s_gesture_recv_img) lv_obj_add_flag(s_gesture_recv_img, LV_OBJ_FLAG_HIDDEN);
+        if (s_gesture_recv_name) lv_label_set_text(s_gesture_recv_name, "No Match");
+    }
+
+    if (s_gesture_recv_values) {
+        lv_label_set_text(s_gesture_recv_values, val_buf);
     }
 
     xSemaphoreGiveRecursive(mux);

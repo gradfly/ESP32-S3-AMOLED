@@ -4,13 +4,16 @@
 
 static const char *TAG = "PWM";
 
-/* 50Hz 周期 = 20000us，16bit 分辨率 = 65536 ticks
- * 1us = 65536 / 20000 = 3.2768 ticks
- * 1000us -> 3277, 2000us -> 6554 */
+/* 50Hz 周期 = 20000us，14bit 分辨率 = 16384 ticks
+ * 1us = 16384 / 20000 = 0.8192 ticks
+ * 1000us -> 819, 1500us -> 1228, 2000us -> 1638
+ * 注意：Arduino-ESP32 3.x 的 ledcAttach() 对 ESP32-S3 的分辨率上限
+ *       为 14 位（仅原版 ESP32 支持 1~20 位）。使用 16 位会导致
+ *       ledcAttach() 返回 false，PWM 无输出。 */
 #define PWM_FREQ_HZ         50
-#define PWM_RESOLUTION_BITS 16
+#define PWM_RESOLUTION_BITS 14
 #define PWM_PERIOD_US       20000
-#define PWM_MAX_DUTY        65535
+#define PWM_MAX_DUTY        16383
 
 /* 6 路 PWM 引脚表（与 PWM_PIN_CH1..CH6 一一对应） */
 static const uint8_t s_pwm_pins[PWM_CHANNEL_COUNT] = {
@@ -36,7 +39,7 @@ static bool s_estop = false;
 static bool s_gesture_mode = false;
 static uint16_t s_gesture_us[PWM_CHANNEL_COUNT] = {0};
 
-/* 微秒 -> 16bit 占空比 tick 数 */
+/* 微秒 -> 14bit 占空比 tick 数 */
 static inline uint32_t pwm_us_to_duty(uint16_t us)
 {
     if (us > PWM_PERIOD_US) us = PWM_PERIOD_US;

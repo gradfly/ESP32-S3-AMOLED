@@ -31,12 +31,14 @@ extern "C" {
 #define PWM_DIRECT_CH_COUNT     5
 
 /* 阈值与输出脉宽（单位：微秒 us）
- * CH1~CH5：CH 值 > 阈值  -> 2000us；CH 值 <= 阈值 -> 1000us
+ * CH1~CH5：CH 值 > 阈值  -> 2000us；CH 值 < 阈值 -> 1000us；CH 值 = 阈值 -> 1500us
  * CH6    ：由 CH1 输入值派生 —— CH1 高(>阈值) -> 1750us；CH1 低(<=阈值) -> 1400us
  *          （CH6 基于 CH1 的输入值而非输出值，故点击 CH1 覆盖不影响 CH6）
  * 手动覆盖 / 全局急停 -> 输出 1500us（中位/停转）
- * 1000~2000us 为标准舵机 / ESC PWM 脉宽范围 */
-#define PWM_VALUE_THRESHOLD   0650
+ * 1000~2000us 为标准舵机 / ESC PWM 脉宽范围
+ * 注意：PWM_VALUE_THRESHOLD 必须写成十进制 650，不能写成 0650
+ *       （C/C++ 中前导 0 表示八进制，0650 = 424 十进制，会导致阈值错误）。 */
+#define PWM_VALUE_THRESHOLD   650
 #define PWM_OUT_HIGH_US       2000
 #define PWM_OUT_LOW_US        1000
 #define PWM_OUT_MID_US        1500

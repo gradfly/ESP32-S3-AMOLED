@@ -151,6 +151,8 @@ void loop()
         ui_append_data((const uint8_t *)s_latest_raw, s_latest_raw_len);
         /* PWM 屏：显示 CH1~CH5 输入值 + 对应输出脉宽 */
         ui_update_pwm_values(s_latest_values, s_latest_value_count);
+        /* 手势识别屏：根据前 5 路数据匹配并显示手势图形 */
+        ui_update_gesture_recv(s_latest_values, s_latest_value_count);
         /* 用 CH1~CH5（索引 0~4）驱动 5 路 PWM 硬件输出 */
         pwm_manager_update(s_latest_values, s_latest_value_count);
     }
