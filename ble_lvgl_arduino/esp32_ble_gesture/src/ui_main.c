@@ -936,7 +936,7 @@ static void create_gesture_recv_screen(void)
     /* 手势图片：居中，3x 放大（36*3=144px） */
     s_gesture_recv_img = lv_img_create(s_screen_gesture_recv);
     lv_img_set_src(s_gesture_recv_img, &img_gesture_1);
-    lv_img_set_zoom(s_gesture_recv_img, 256 * 3);
+    lv_img_set_zoom(s_gesture_recv_img, 256 * 4);
     lv_obj_align(s_gesture_recv_img, LV_ALIGN_TOP_MID, 0, 150);
 
     /* 手势名称标签 */

@@ -2,6 +2,7 @@
 #define BLE_MANAGER_H
 
 #include <stdint.h>
+#include <stdbool.h>
 
 #ifdef __cplusplus
 extern "C" {

@@ -566,7 +566,7 @@ static void analytics_create(lv_obj_t * parent)
     lv_chart_set_div_line_count(chart1, 0, 12);
     lv_chart_set_point_count(chart1, 12);
     lv_obj_add_event_cb(chart1, chart_event_cb, LV_EVENT_ALL, NULL);
-    if(disp_size == DISP_SMALL) lv_chart_set_zoom_x(chart1, 256 * 3);
+    if(disp_size == DISP_SMALL) lv_chart_set_zoom_x(chart1, 256 * 4);
     else if(disp_size == DISP_MEDIUM) lv_chart_set_zoom_x(chart1, 256 * 2);
 
     lv_obj_set_style_border_side(chart1, LV_BORDER_SIDE_LEFT | LV_BORDER_SIDE_BOTTOM, 0);
