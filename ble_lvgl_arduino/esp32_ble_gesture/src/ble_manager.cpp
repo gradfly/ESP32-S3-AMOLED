@@ -724,7 +724,7 @@ void ble_manager_init(void)
         Serial.println("[BLE] WARNING: Low memory, BLE scan may not work!");
     }
 
-    NimBLEDevice::init("ESP32-S3-Display");
+    NimBLEDevice::init(BLE_DEVICE_NAME);
     NimBLEDevice::setPower(ESP_PWR_LVL_P9);
     /* MTU 可在连接后动态协商，默认 23 即可满足串口 BLE 模块需求；
      * 此处保留 setMTU(256) 以便后续大数据量传输，但它不影响建连流程。 */
@@ -782,9 +782,26 @@ void ble_manager_init(void)
     s_server_write_char->setCallbacks(new ServerWriteCallbacks());
     s_server_service->start();
     NimBLEAdvertising *pAdv = NimBLEDevice::getAdvertising();
-    pAdv->addServiceUUID("FFE0");
-    pAdv->start();
-    Serial.println("[BLE] Server started: FFE0/FFE2(notify)/FFE1(write), advertising...");
+    /* 清除可能残留的广播数据，确保从干净状态开始配置 */
+    pAdv->clearData();
+    /* 先开启 scan response，再 setName：这样设备名会进入 scan response 数据，
+     * 手机/小程序主动扫描时才能收到名称。若不开 scan response，
+     * setName 会尝试放入 31 字节主广播包，可能因空间不足被静默丢弃。 */
+    pAdv->enableScanResponse(true);
+    if (!pAdv->setName(BLE_DEVICE_NAME)) {
+        ESP_LOGE(TAG, "Failed to set advertising name");
+        Serial.println("[BLE] ERROR: setName failed!");
+    }
+    if (!pAdv->addServiceUUID("FFE0")) {
+        ESP_LOGE(TAG, "Failed to add service UUID to advertising");
+        Serial.println("[BLE] ERROR: addServiceUUID failed!");
+    }
+    if (!pAdv->start()) {
+        ESP_LOGE(TAG, "Failed to start advertising");
+        Serial.println("[BLE] ERROR: advertising start failed!");
+    } else {
+        Serial.printf("[BLE] Server started: name=%s, FFE0/FFE2(notify)/FFE1(write), advertising...\n", BLE_DEVICE_NAME);
+    }
     
     ESP_LOGI(TAG, "BLE initialized successfully (s_scan=%p)", s_scan);
     Serial.printf("[BLE] NimBLE initialized, scan=%p, heap=%lu\n", s_scan, (unsigned long)free_heap);

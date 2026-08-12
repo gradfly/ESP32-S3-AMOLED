@@ -17,6 +17,9 @@ extern "C" {
 /* 自定义厂商 ID，用于标识广播包中的 UUID+SN 数据 */
 #define BLE_CUSTOM_MFR_ID  0xFF00
 
+/* BLE 广播设备名称：写入广播包，方便手机/小程序扫描时识别本设备 */
+#define BLE_DEVICE_NAME    "ExoHand-BLE"
+
 typedef enum {
     BLE_STATE_IDLE = 0,
     BLE_STATE_SCANNING,
