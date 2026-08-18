@@ -16,15 +16,6 @@ static char s_latest_raw[128] = "";
 static uint16_t s_latest_raw_len = 0;
 static bool s_data_dirty = false;
 
-/* BLE 协议扩展：首值 ≥ 9000 表示"带外控制命令"（不会与正常 0~3000 的 CH 值范围冲突）
- *   CMD_ESTOP_ON  = 9001  →  开启全局急停（等效于 ESP32 端按 E-STOP 按钮）
- *   CMD_ESTOP_OFF = 9000  →  关闭急停（保留兼容，小程序不再使用此命令）
- * 小程序"恢复按钮"直接发送急停前的 CH 数组（正常数据帧），ESP32 收到后
- * 自动关闭急停并按新 CH 值刷新输出（见下方正常数据帧路径的 auto-off 逻辑）。 */
-#define BLE_CMD_ESTOP_ON    9001
-#define BLE_CMD_ESTOP_OFF   9000
-#define BLE_CMD_THRESHOLD   9000
-
 static void ble_data_callback(uint8_t *data, uint16_t len)
 {
     /* data 是已按 ';' 重组的完整帧，直接解析为 11 个数值 */
@@ -32,41 +23,8 @@ static void ble_data_callback(uint8_t *data, uint16_t len)
     uint8_t n = ble_manager_parse_frame(data, len, tmp_values, BLE_DATA_VALUE_COUNT);
     if (n == 0) return;
 
-    /* ======= 命令帧：首值 ≥ 9000 ======= */
-    if (tmp_values[0] >= BLE_CMD_THRESHOLD) {
-        int16_t cmd = tmp_values[0];
-        Serial.printf("[BLE] Received control cmd: %d\n", cmd);
-        switch (cmd) {
-        case BLE_CMD_ESTOP_ON:
-            pwm_manager_set_estop(true);
-            Serial.println("[BLE] ESTOP -> ON (all channels -> 1500us)");
-            break;
-        case BLE_CMD_ESTOP_OFF:
-            pwm_manager_set_estop(false);
-            Serial.println("[BLE] ESTOP -> OFF (resume normal output)");
-            break;
-        default:
-            Serial.printf("[BLE] Unknown control cmd: %d, ignored\n", cmd);
-            return;
-        }
-        /* 命令也刷新 PWM 硬件输出 + UI（让 E-STOP 按钮状态 / 汇总行立即更新） */
-        pwm_manager_update(s_latest_values, s_latest_value_count);
-        ui_update_pwm_values(s_latest_values, s_latest_value_count);
-
-        /* 命令帧保存一份原始数据（让数据屏可以看到命令帧），但不覆盖数值缓存 */
-        uint16_t c = (len < sizeof(s_latest_raw) - 1) ? len : sizeof(s_latest_raw) - 1;
-        memcpy(s_latest_raw, data, c);
-        s_latest_raw[c] = '\0';
-        s_latest_raw_len = c;
-        /* 只刷新原始帧显示，不刷新数值网格（避免把命令值 9001 显示进 CH1） */
-        ui_append_data((const uint8_t *)s_latest_raw, s_latest_raw_len);
-        return;
-    }
-
-    /* ======= 正常数据帧：11 路 CH 映射 ======= */
-    /* 小程序"恢复按钮"直接发送急停前的 CH 数组（正常数据帧），不再发送
-     * CMD_ESTOP_OFF 命令帧。因此 ESP32 收到正常数据帧时若急停仍开启，
-     * 自动关闭急停，随后按新 CH 值正常刷新输出。 */
+    /* 收到正常数据帧时若急停仍开启，自动关闭急停，
+     * 随后按新 CH 值正常刷新输出。 */
     if (pwm_manager_get_estop()) {
         pwm_manager_set_estop(false);
         Serial.println("[BLE] Normal data frame received while ESTOP ON -> auto OFF");

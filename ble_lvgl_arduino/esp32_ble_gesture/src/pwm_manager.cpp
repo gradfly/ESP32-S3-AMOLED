@@ -43,15 +43,32 @@ static uint16_t s_gesture_us[PWM_CHANNEL_COUNT] = {0};
  * 高档 = 1500 + level*50，低档 = 1500 - level*50 */
 static uint8_t s_force_level = 10;
 
-/* 行程调节：1~8，默认 1。
- * 持续时间 = (level + 1) * 500 ms  → 1:1s 2:1.5s ... 8:4.5s */
-static uint8_t s_stroke_level = 1;
+/* 行程调节：1~10，默认 8。
+ * 持续时间 = (level + 1) * 500 ms  → 1:1s 2:1.5s ... 10:5.5s */
+static uint8_t s_stroke_level = 8;
 
 /* 手势定时：点击手势后按行程时间输出，到期后 6 路回归 1500us。
  * rest_pose（初始姿态/回归姿势）不启动定时。 */
 static bool s_gesture_timed = false;
 static uint32_t s_gesture_deadline_ms = 0;
 static pwm_gesture_expired_cb_t s_expired_cb = NULL;
+
+/* 递归互斥锁：保护 s_gesture_us[] / s_gesture_timed 等共享状态。
+ * LVGL 任务（手势点击回调）与主循环（pwm_manager_tick 定时到期）
+ * 在 ESP32-S3 双核上并发运行，若不加锁，定时到期会将 s_gesture_us[]
+ * 部分覆盖为 1500us，导致手势切换后部分通道不生效。
+ * 使用递归锁：pwm_manager_tick() 内部调用 pwm_manager_set_gesture_outputs()。 */
+static SemaphoreHandle_t s_mutex = NULL;
+
+static void pwm_lock(void)
+{
+    if (s_mutex) xSemaphoreTakeRecursive(s_mutex, portMAX_DELAY);
+}
+
+static void pwm_unlock(void)
+{
+    if (s_mutex) xSemaphoreGiveRecursive(s_mutex);
+}
 
 /* 微秒 -> 14bit 占空比 tick 数 */
 static inline uint32_t pwm_us_to_duty(uint16_t us)
@@ -101,7 +118,8 @@ bool pwm_manager_get_estop(void)
 
 void pwm_manager_set_gesture_mode(bool on)
 {
-    if (s_gesture_mode == on) return;
+    pwm_lock();
+    if (s_gesture_mode == on) { pwm_unlock(); return; }
     s_gesture_mode = on;
     if (on) {
         /* 进入手势模式：保留当前输出，避免舵机突变 */
@@ -113,6 +131,7 @@ void pwm_manager_set_gesture_mode(bool on)
     for (uint8_t i = 0; i < PWM_CHANNEL_COUNT; i++) {
         s_pwm_us[i] = 0;
     }
+    pwm_unlock();
     ESP_LOGI(TAG, "Gesture mode %s", on ? "ON" : "OFF");
 }
 
@@ -125,16 +144,26 @@ void pwm_manager_set_gesture_outputs(const uint16_t *us, uint8_t count)
 {
     if (!us) return;
     uint8_t n = (count < PWM_CHANNEL_COUNT) ? count : PWM_CHANNEL_COUNT;
+    pwm_lock();
     for (uint8_t i = 0; i < n; i++) {
         s_gesture_us[i] = us[i];
+    }
+    /* 强制下次 update 重写所有硬件（即使脉宽恰好相同），
+     * 确保手势切换后所有通道立即生效。 */
+    for (uint8_t i = 0; i < PWM_CHANNEL_COUNT; i++) {
+        s_pwm_us[i] = 0;
     }
     /* 触发硬件刷新：手势模式开启时按 s_gesture_us 输出；
      * 未开启时仅缓存（update 会走 BLE/覆盖分支，不读 s_gesture_us）。 */
     pwm_manager_update(NULL, 0);
+    pwm_unlock();
 }
 
 void pwm_manager_init(void)
 {
+    s_mutex = xSemaphoreCreateRecursiveMutex();
+    ESP_LOGI(TAG, "PWM mutex created: %s", s_mutex ? "OK" : "FAIL");
+
     for (uint8_t i = 0; i < PWM_CHANNEL_COUNT; i++) {
         uint8_t pin = s_pwm_pins[i];
         /* ledcAttach(pin, freq, resolution) 返回 bool（Arduino-ESP32 3.x API） */
@@ -267,9 +296,16 @@ void pwm_manager_set_gesture_expired_cb(pwm_gesture_expired_cb_t cb)
 
 void pwm_manager_set_gesture_outputs_timed(const uint16_t *us, uint8_t count, bool rest_pose)
 {
-    /* 先设置输出（立即刷新硬件） */
+    /* 先取消正在运行的定时器，防止 pwm_manager_tick() 在更新过程中
+     * 将 s_gesture_us[] 覆盖为 1500us（LVGL 任务与主循环并发的竞态）。 */
+    pwm_lock();
+    s_gesture_timed = false;
+    pwm_unlock();
+
+    /* 设置输出（立即刷新硬件） */
     pwm_manager_set_gesture_outputs(us, count);
 
+    pwm_lock();
     if (rest_pose) {
         /* 初始姿态/回归姿势：不启动定时，持续输出 */
         s_gesture_timed = false;
@@ -280,14 +316,17 @@ void pwm_manager_set_gesture_outputs_timed(const uint16_t *us, uint8_t count, bo
         ESP_LOGI(TAG, "Gesture timed: %lu ms -> then 1500us",
                  (unsigned long)pwm_manager_get_stroke_duration_ms());
     }
+    pwm_unlock();
 }
 
 void pwm_manager_tick(void)
 {
-    if (!s_gesture_timed) return;
+    pwm_lock();
+    if (!s_gesture_timed) { pwm_unlock(); return; }
     /* 急停或手势模式关闭时，定时无意义（硬件已由急停/BLE 控制） */
     if (s_estop || !s_gesture_mode) {
         s_gesture_timed = false;
+        pwm_unlock();
         return;
     }
     /* 检查是否到期 */
@@ -300,9 +339,13 @@ void pwm_manager_tick(void)
         }
         pwm_manager_set_gesture_outputs(mid, PWM_CHANNEL_COUNT);
         ESP_LOGI(TAG, "Gesture timed out -> all channels 1500us");
+        /* 释放锁后再回调，避免回调中的 UI 操作与锁产生死锁 */
+        pwm_unlock();
         /* 通知 UI 更新 */
         if (s_expired_cb) {
             s_expired_cb();
         }
+    } else {
+        pwm_unlock();
     }
 }
