@@ -24,6 +24,10 @@ static lv_obj_t *s_gesture_recv_name = NULL;    /* 手势名称标签（Gesture 
 static lv_obj_t *s_gesture_recv_status = NULL;  /* 顶部状态行：连接状态 */
 static lv_obj_t *s_gesture_recv_values = NULL;  /* 5 路通道值 + 模式显示 */
 
+/* 手势识别屏 PWM 输出状态 */
+static bool   s_recv_gesture_mode = false;   /* 识别屏开启的手势模式标志 */
+static int8_t s_last_recv_matched = -1;       /* 上次匹配的手势索引（-1=无匹配/无数据） */
+
 /* 手势屏状态：需在 gesture_swipe_to_main() 等早期定义的函数前声明 */
 #define GESTURE_COUNT 12
 static lv_obj_t *s_gesture_cells[GESTURE_COUNT] = {0};      /* 12 格子对象（点击匹配） */
@@ -76,6 +80,12 @@ static lv_obj_t *s_estop_label = NULL;
 /* gesture 页面急停按钮：与 PWM 页面按钮共享同一全局急停状态 */
 static lv_obj_t *s_gesture_estop_btn   = NULL;
 static lv_obj_t *s_gesture_estop_label = NULL;
+
+/* 力度/行程调节滑块（主屏） */
+static lv_obj_t *s_force_slider = NULL;
+static lv_obj_t *s_force_value_label = NULL;
+static lv_obj_t *s_stroke_slider = NULL;
+static lv_obj_t *s_stroke_value_label = NULL;
 
 /* 最新一帧数据缓存：供 cell 点击回调立即刷新 PWM 硬件 + UI 使用 */
 static int16_t s_pwm_values_cache[BLE_DATA_VALUE_COUNT] = {0};
@@ -151,6 +161,11 @@ static void gesture_update_info_label(const uint16_t *us); /* 更新手势屏底
 static void refresh_active_screen_status(void);     /* 按当前 BLE 状态刷新活动屏 status */
 static void status_refresh_timer_cb(lv_timer_t *t); /* 滑动动画结束后 refresh 回调 */
 static void schedule_status_refresh(void);           /* 安排一次性 refresh 定时器 */
+
+/* 力度/行程滑块回调 + 手势 pose 力度重映射 */
+static void event_force_slider_cb(lv_event_t *e);
+static void event_stroke_slider_cb(lv_event_t *e);
+static void remap_gesture_pwm(const uint16_t *src, uint16_t *dst);
 
 static void create_main_screen(void);
 static void create_list_screen(void);
@@ -319,8 +334,9 @@ static void gesture_swipe_to_main(void)
     uint32_t now = lv_tick_get();
     if (now - s_last_swipe_ms < SWIPE_DEBOUNCE_MS) return;
 
-    /* 返回主屏前设置回归姿势（手势模式仍开启，立即刷新硬件） */
-    pwm_manager_set_gesture_outputs(s_gesture_rest_pose, PWM_CHANNEL_COUNT);
+    /* 返回主屏前设置回归姿势（手势模式仍开启，立即刷新硬件）。
+     * 回归姿势为初始姿态，不受行程定时影响（rest_pose=true） */
+    pwm_manager_set_gesture_outputs_timed(s_gesture_rest_pose, PWM_CHANNEL_COUNT, true);
 
     SemaphoreHandle_t mux = get_lvgl_mutex();
     if (!mux) return;
@@ -419,8 +435,9 @@ void ui_init(void)
     create_gesture_screen();
     create_gesture_recv_screen();
 
-    /* 主屏 / 数据屏：含透明热区的完整边缘滑动（线性顺序 Main<->Data<->PWM<->GestureRecv） */
-    setup_screen_swipe(s_screen_main);
+    /* 主屏：仅用屏幕级手势（无热区），滑块需接收拖拽，热区会阻挡滑块操作。
+     * 数据屏：含透明热区的完整边缘滑动（线性顺序 Main<->Data<->PWM<->GestureRecv） */
+    setup_screen_swipe_base(s_screen_main);
     setup_screen_swipe(s_screen_data);
     /* PWM 屏仅用屏幕级手势（无热区）：格子自身需接收点击，热区会阻挡点击 */
     setup_screen_swipe_base(s_screen_pwm);
@@ -441,34 +458,80 @@ static void create_main_screen(void)
     lv_obj_t *title = lv_label_create(s_screen_main);
     lv_label_set_text(title, "Select Mode");
     lv_obj_add_style(title, &s_title_style, 0);
-    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 30);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 12);
 
     /* "扫描设备"：进入 BLE 扫描列表 */
     s_scan_btn = lv_btn_create(s_screen_main);
     lv_obj_add_style(s_scan_btn, &s_btn_style, 0);
-    lv_obj_set_size(s_scan_btn, 200, 50);
-    lv_obj_align(s_scan_btn, LV_ALIGN_CENTER, 0, -50);
+    lv_obj_set_size(s_scan_btn, 180, 44);
+    lv_obj_align(s_scan_btn, LV_ALIGN_TOP_MID, 0, 100);
     lv_obj_t *scan_label = lv_label_create(s_scan_btn);
     lv_label_set_text(scan_label, "SCAN");
-    lv_obj_set_style_text_font(scan_label, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(scan_label, &lv_font_montserrat_20, 0);
     lv_obj_center(scan_label);
     lv_obj_add_event_cb(s_scan_btn, event_scan_btn_cb, LV_EVENT_CLICKED, NULL);
 
     /* "自主训练"：进入手势屏（无需 BLE 连接，离线浏览 12 个手势） */
     lv_obj_t *train_btn = lv_btn_create(s_screen_main);
     lv_obj_add_style(train_btn, &s_btn_style, 0);
-    lv_obj_set_size(train_btn, 200, 50);
-    lv_obj_align(train_btn, LV_ALIGN_CENTER, 0, 20);
+    lv_obj_set_size(train_btn, 180, 44);
+    lv_obj_align(train_btn, LV_ALIGN_TOP_MID, 0, 160);
     lv_obj_t *train_label = lv_label_create(train_btn);
     lv_label_set_text(train_label, "TRAINING");
-    lv_obj_set_style_text_font(train_label, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(train_label, &lv_font_montserrat_20, 0);
     lv_obj_center(train_label);
     lv_obj_add_event_cb(train_btn, event_train_btn_cb, LV_EVENT_CLICKED, NULL);
 
     s_status_label = lv_label_create(s_screen_main);
     lv_label_set_text(s_status_label, "Ready");
     lv_obj_add_style(s_status_label, &s_label_style, 0);
-    lv_obj_align(s_status_label, LV_ALIGN_CENTER, 0, 80);
+    lv_obj_align(s_status_label, LV_ALIGN_TOP_MID, 0, 220);
+
+    /* ====== 力度调节滑块（1~10，默认 10）======
+     * 数值影响 CH1~CH5 高/低档 PWM 脉宽：高档=1500+n*50，低档=1500-n*50 */
+    lv_obj_t *force_title = lv_label_create(s_screen_main);
+    lv_label_set_text(force_title, "Force");
+    lv_obj_set_style_text_font(force_title, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(force_title, lv_color_hex(0x333333), 0);
+    lv_obj_align(force_title, LV_ALIGN_TOP_LEFT, 20, 270);
+
+    s_force_value_label = lv_label_create(s_screen_main);
+    lv_label_set_text(s_force_value_label, "10");
+    lv_obj_set_style_text_font(s_force_value_label, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(s_force_value_label, lv_color_hex(0x007AFF), 0);
+    lv_obj_align(s_force_value_label, LV_ALIGN_TOP_RIGHT, -20, 270);
+
+    s_force_slider = lv_slider_create(s_screen_main);
+    lv_obj_set_width(s_force_slider, 240);
+    lv_slider_set_range(s_force_slider, 1, 10);
+    lv_slider_set_value(s_force_slider, 10, LV_ANIM_OFF);
+    lv_obj_align(s_force_slider, LV_ALIGN_TOP_MID, 0, 295);
+    lv_obj_add_event_cb(s_force_slider, event_force_slider_cb, LV_EVENT_VALUE_CHANGED, NULL);
+
+    /* ====== 行程调节滑块（1~10，默认 8）======
+     * 数值仅影响 training 模式手势 PWM 输出持续时间，到期后 6 路回归 1500us */
+    lv_obj_t *stroke_title = lv_label_create(s_screen_main);
+    lv_label_set_text(stroke_title, "Stroke");
+    lv_obj_set_style_text_font(stroke_title, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(stroke_title, lv_color_hex(0x333333), 0);
+    lv_obj_align(stroke_title, LV_ALIGN_TOP_LEFT, 20, 340);
+
+    s_stroke_value_label = lv_label_create(s_screen_main);
+    lv_label_set_text(s_stroke_value_label, "8");
+    lv_obj_set_style_text_font(s_stroke_value_label, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(s_stroke_value_label, lv_color_hex(0x007AFF), 0);
+    lv_obj_align(s_stroke_value_label, LV_ALIGN_TOP_RIGHT, -20, 340);
+
+    s_stroke_slider = lv_slider_create(s_screen_main);
+    lv_obj_set_width(s_stroke_slider, 240);
+    lv_slider_set_range(s_stroke_slider, 1, 10);
+    lv_slider_set_value(s_stroke_slider, 8, LV_ANIM_OFF);
+    lv_obj_align(s_stroke_slider, LV_ALIGN_TOP_MID, 0, 365);
+    lv_obj_add_event_cb(s_stroke_slider, event_stroke_slider_cb, LV_EVENT_VALUE_CHANGED, NULL);
+
+    /* 初始化 pwm_manager 力度/行程为滑块默认值 */
+    pwm_manager_set_force_level(10);
+    pwm_manager_set_stroke_level(10);
 }
 
 static void create_list_screen(void)
@@ -887,7 +950,7 @@ static void create_gesture_screen(void)
 }
 
 /* ====== 手势识别屏：根据 BLE 前 5 路数据匹配并显示手势图形 ======
- * 阈值 650：value > 650 为高（1），value <= 650 为低（0）。
+ * 阈值 650：value < 650 为高（1），value >= 650 为低（0）。
  * 5 路通道组合为 5 位模式，查表匹配对应手势图片。
  * 用户示例：<650, >650, <650, <650, <650 → 模式 01000 → Gesture 1 */
 #define GESTURE_RECV_THRESHOLD  650
@@ -1176,6 +1239,13 @@ static void refresh_active_screen_status(void)
     lv_obj_t *scr = lv_scr_act();
     const char *msg = s_last_message[0] ? s_last_message : "BLE Ready";
 
+    /* 离开手势识别屏时关闭手势模式，恢复 BLE 自动映射 */
+    if (scr != s_screen_gesture_recv && s_recv_gesture_mode) {
+        pwm_manager_set_gesture_mode(false);
+        s_recv_gesture_mode = false;
+        s_last_recv_matched = -1;
+    }
+
     if (scr == s_screen_main) {
         if (s_status_label) {
             lv_label_set_text(s_status_label, msg);
@@ -1213,6 +1283,12 @@ static void refresh_active_screen_status(void)
         /* 切到 PWM 屏时用缓存数据刷新格子显示（非活动期间数据已缓存但未更新 UI） */
         ui_update_pwm_values(s_pwm_values_cache, s_pwm_count_cache);
     } else if (scr == s_screen_gesture_recv) {
+        /* 进入手势识别屏：开启手势模式，使匹配结果能直接驱动 PWM 输出 */
+        if (!s_recv_gesture_mode) {
+            pwm_manager_set_gesture_mode(true);
+            s_recv_gesture_mode = true;
+            s_last_recv_matched = -1;
+        }
         if (s_gesture_recv_status) {
             if (s_last_state == BLE_STATE_CONNECTED && s_connected_name[0]) {
                 char buf[48];
@@ -1348,8 +1424,8 @@ void ui_update_state(ble_state_t state, const char *message)
                 }
                 pwm_manager_set_estop(false);
                 pwm_manager_set_gesture_mode(false);
-                /* 触发一次 pwm_manager_update(NULL,1000) → 全通道按默认高脉宽输出 */
-                pwm_manager_update(NULL, 1000);
+                /* 触发一次 pwm_manager_update(NULL,1500) → 全通道按默认不输出 */
+                pwm_manager_update(NULL, 1500);
             } else {
                 /* 外设断开：跳回首页（原有行为） */
                 ui_switch_screen(UI_SCREEN_MAIN);
@@ -1580,11 +1656,12 @@ void ui_update_pwm_values(const int16_t *values, uint8_t count)
             }
         } else if (i < n) {
             int16_t v = s_pwm_values_cache[i];
-            /* <650 -> 2000us，>650 -> 1000us，=650 -> 1500us */
+            /* <650 -> 高档，>650 -> 低档，=650 -> 1500us
+             * 高/低档由力度调节滑块决定（默认 2000/1000） */
             if (v < PWM_VALUE_THRESHOLD) {
-                us = PWM_OUT_HIGH_US;
+                us = pwm_manager_get_high_us();
             } else if (v > PWM_VALUE_THRESHOLD) {
-                us = PWM_OUT_LOW_US;
+                us = pwm_manager_get_low_us();
             } else {
                 us = PWM_OUT_MID_US;
             }
@@ -1594,14 +1671,16 @@ void ui_update_pwm_values(const int16_t *values, uint8_t count)
             show_value = false;
         }
 
-        /* 输出 PWM 文字 + 颜色：2000/1750 绿 / 1000/1400 蓝 / 1500 灰 */
+        /* 输出 PWM 文字 + 颜色：高档/1750 绿 / 低档/1400 蓝 / 1500 灰 */
         if (s_pwm_cells[i].output) {
             if (show_value) {
                 lv_label_set_text_fmt(s_pwm_cells[i].output, "%uus", us);
                 lv_color_t color;
-                if (us == PWM_OUT_HIGH_US || us == PWM_OUT_CH6_HIGH_US)
+                uint16_t high_us = pwm_manager_get_high_us();
+                uint16_t low_us  = pwm_manager_get_low_us();
+                if (us == high_us || us == PWM_OUT_CH6_HIGH_US)
                     color = lv_color_hex(0x34C759);   /* 绿 */
-                else if (us == PWM_OUT_LOW_US || us == PWM_OUT_CH6_LOW_US)
+                else if (us == low_us || us == PWM_OUT_CH6_LOW_US)
                     color = lv_color_hex(0x007AFF);   /* 蓝 */
                 else
                     color = lv_color_hex(0x8E8E93);   /* 灰(1500) */
@@ -1712,12 +1791,28 @@ void ui_update_gesture_recv(const int16_t *values, uint8_t count)
         return;
     }
 
+    /* 确保手势模式开启（断连等事件可能将其关闭），
+     * 手势模式下 pwm_manager_update 会读取 s_gesture_us 输出对应脉宽 */
+    if (!pwm_manager_get_gesture_mode()) {
+        pwm_manager_set_gesture_mode(true);
+    }
+    s_recv_gesture_mode = true;
+
     /* 数据不足 5 路时显示等待 */
     if (!values || count < 5) {
         if (s_gesture_recv_img) lv_obj_add_flag(s_gesture_recv_img, LV_OBJ_FLAG_HIDDEN);
         if (s_gesture_recv_name) lv_label_set_text(s_gesture_recv_name, "Waiting...");
         if (s_gesture_recv_values) lv_label_set_text(s_gesture_recv_values,
             "CH1:----  CH2:----  CH3:----\nCH4:----  CH5:----\nPattern: - - - - -");
+        /* 无数据时 PWM 回归中位（rest_pose=true 不启动行程定时） */
+        if (s_last_recv_matched != -1) {
+            static const uint16_t mid[PWM_CHANNEL_COUNT] = {
+                PWM_OUT_MID_US, PWM_OUT_MID_US, PWM_OUT_MID_US,
+                PWM_OUT_MID_US, PWM_OUT_MID_US, PWM_OUT_MID_US
+            };
+            pwm_manager_set_gesture_outputs_timed(mid, PWM_CHANNEL_COUNT, true);
+            s_last_recv_matched = -1;
+        }
         xSemaphoreGiveRecursive(mux);
         return;
     }
@@ -1766,6 +1861,29 @@ void ui_update_gesture_recv(const int16_t *values, uint8_t count)
         if (s_gesture_recv_name) lv_label_set_text(s_gesture_recv_name, "No Match");
     }
 
+    /* 匹配结果变化时输出对应 PWM（避免每帧重复刷新硬件）
+     * 通过图片指针在 s_gestures 中查找对应 6 路脉宽，
+     * 经力度重映射后按行程时间定时输出（到期后自动回归 1500us） */
+    if (matched != s_last_recv_matched) {
+        s_last_recv_matched = matched;
+        if (matched >= 0) {
+            for (uint8_t i = 0; i < GESTURE_COUNT; i++) {
+                if (s_gestures[i].img == s_gesture_recv_map[matched].img) {
+                    uint16_t remapped[PWM_CHANNEL_COUNT];
+                    remap_gesture_pwm(s_gestures[i].pwm, remapped);
+                    pwm_manager_set_gesture_outputs_timed(remapped, PWM_CHANNEL_COUNT, false);
+                    break;
+                }
+            }
+        } else {
+            static const uint16_t mid[PWM_CHANNEL_COUNT] = {
+                PWM_OUT_MID_US, PWM_OUT_MID_US, PWM_OUT_MID_US,
+                PWM_OUT_MID_US, PWM_OUT_MID_US, PWM_OUT_MID_US
+            };
+            pwm_manager_set_gesture_outputs_timed(mid, PWM_CHANNEL_COUNT, true);
+        }
+    }
+
     if (s_gesture_recv_values) {
         lv_label_set_text(s_gesture_recv_values, val_buf);
     }
@@ -1805,8 +1923,12 @@ static void event_gesture_cell_click_cb(lv_event_t *e)
     }
     if (idx >= GESTURE_COUNT) return;
 
-    /* 设置 6 路 PWM 输出（手势模式已开启，立即刷新硬件） */
-    pwm_manager_set_gesture_outputs(s_gestures[idx].pwm, PWM_CHANNEL_COUNT);
+    /* 设置 6 路 PWM 输出（手势模式已开启，立即刷新硬件）。
+     * 力度调节：将 pose 中的 2000→高档、1000→低档（CH6 的 1400/1750 不变）。
+     * 行程调节：启动定时，到期后 6 路回归 1500us（rest_pose=false） */
+    uint16_t remapped[PWM_CHANNEL_COUNT];
+    remap_gesture_pwm(s_gestures[idx].pwm, remapped);
+    pwm_manager_set_gesture_outputs_timed(remapped, PWM_CHANNEL_COUNT, false);
 
     /* 互斥高亮：清除所有格子，当前格蓝底白字 */
     SemaphoreHandle_t mux = get_lvgl_mutex();
@@ -1834,7 +1956,7 @@ static void event_gesture_cell_click_cb(lv_event_t *e)
         };
         gesture_update_info_label(estop_pwm);
     } else {
-        gesture_update_info_label(s_gestures[idx].pwm);
+        gesture_update_info_label(remapped);
     }
 }
 
@@ -1954,8 +2076,93 @@ static void event_estop_btn_cb(lv_event_t *e)
         };
         gesture_update_info_label(estop_pwm);
     } else if (s_selected_gesture < GESTURE_COUNT) {
-        /* 恢复之前选中的手势输出（如果有选中项） */
-        pwm_manager_set_gesture_outputs(s_gestures[s_selected_gesture].pwm, PWM_CHANNEL_COUNT);
-        gesture_update_info_label(s_gestures[s_selected_gesture].pwm);
+        /* 恢复之前选中的手势输出（力度重映射 + 行程定时） */
+        uint16_t remapped[PWM_CHANNEL_COUNT];
+        remap_gesture_pwm(s_gestures[s_selected_gesture].pwm, remapped);
+        pwm_manager_set_gesture_outputs_timed(remapped, PWM_CHANNEL_COUNT, false);
+        gesture_update_info_label(remapped);
     }
+}
+
+/* ====== 力度/行程滑块 + 手势定时回调 ====== */
+
+/* 将手势 pose 中的 2000→高档、1000→低档（CH6 的 1400/1750 保持不变）。
+ * 力度调节滑块控制 CH1~CH5 的高/低档脉宽，初始姿态不受影响（不经过此函数）。 */
+static void remap_gesture_pwm(const uint16_t *src, uint16_t *dst)
+{
+    uint16_t high_us = pwm_manager_get_high_us();
+    uint16_t low_us  = pwm_manager_get_low_us();
+    for (uint8_t i = 0; i < PWM_CHANNEL_COUNT; i++) {
+        if (src[i] == PWM_OUT_HIGH_US) {
+            dst[i] = high_us;
+        } else if (src[i] == PWM_OUT_LOW_US) {
+            dst[i] = low_us;
+        } else {
+            dst[i] = src[i];   /* 1400/1750 等 CH6 专用值保持不变 */
+        }
+    }
+}
+
+/* 力度调节滑块：数值 1~10，影响 CH1~CH5 高/低档 PWM 脉宽。
+ * 滑动后立即刷新当前模式的 PWM 输出（BLE 自动映射或手势训练）。 */
+static void event_force_slider_cb(lv_event_t *e)
+{
+    lv_obj_t *slider = lv_event_get_target(e);
+    if (!slider) return;
+    int32_t val = lv_slider_get_value(slider);
+    uint8_t level = (uint8_t)val;
+
+    /* 更新数值标签 */
+    if (s_force_value_label) {
+        lv_label_set_text_fmt(s_force_value_label, "%d", val);
+    }
+
+    /* 更新 pwm_manager 力度等级 */
+    pwm_manager_set_force_level(level);
+
+    /* 立即刷新当前模式的 PWM 输出 */
+    if (pwm_manager_get_gesture_mode() && s_selected_gesture < GESTURE_COUNT) {
+        /* 手势训练模式：重新输出选中的手势（力度重映射 + 行程定时） */
+        uint16_t remapped[PWM_CHANNEL_COUNT];
+        remap_gesture_pwm(s_gestures[s_selected_gesture].pwm, remapped);
+        if (!pwm_manager_get_estop()) {
+            pwm_manager_set_gesture_outputs_timed(remapped, PWM_CHANNEL_COUNT, false);
+        }
+        gesture_update_info_label(remapped);
+    } else {
+        /* BLE 模式：用缓存数据刷新 PWM 硬件 + PWM 屏显示 */
+        pwm_manager_update(s_pwm_values_cache, s_pwm_count_cache);
+        ui_update_pwm_values(s_pwm_values_cache, s_pwm_count_cache);
+    }
+}
+
+/* 行程调节滑块：数值 1~10，仅影响训练模式手势输出持续时间。
+ * 滑动后不立即改变当前输出，仅影响后续手势点击的定时。 */
+static void event_stroke_slider_cb(lv_event_t *e)
+{
+    lv_obj_t *slider = lv_event_get_target(e);
+    if (!slider) return;
+    int32_t val = lv_slider_get_value(slider);
+    uint8_t level = (uint8_t)val;
+
+    /* 更新数值标签 */
+    if (s_stroke_value_label) {
+        lv_label_set_text_fmt(s_stroke_value_label, "%d", val);
+    }
+
+    /* 更新 pwm_manager 行程等级 */
+    pwm_manager_set_stroke_level(level);
+}
+
+/* 手势定时到期回调：手势屏底部汇总更新为 6 路 1500us */
+void ui_gesture_expired(void)
+{
+    static const uint16_t mid_pwm[PWM_CHANNEL_COUNT] = {
+        PWM_OUT_MID_US, PWM_OUT_MID_US, PWM_OUT_MID_US,
+        PWM_OUT_MID_US, PWM_OUT_MID_US, PWM_OUT_MID_US
+    };
+    gesture_update_info_label(mid_pwm);
+    /* 重置识别屏匹配状态，使下次数据帧能重新触发手势输出
+     * （定时到期后 6 路已回归 1500us，若手势仍在检测则重新输出） */
+    s_last_recv_matched = -1;
 }

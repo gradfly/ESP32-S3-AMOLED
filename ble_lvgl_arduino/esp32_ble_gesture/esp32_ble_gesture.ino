@@ -89,6 +89,13 @@ static void ble_state_callback(ble_state_t state, const char *message)
     ui_update_state(state, message);
 }
 
+/* 手势定时到期回调：pwm_manager_tick() 检测到行程时间到达后调用，
+ * 通知 UI 更新手势屏底部汇总为 6 路 1500us。 */
+static void gesture_expired_callback(void)
+{
+    ui_gesture_expired();
+}
+
 void setup()
 {
     Serial.begin(115200);
@@ -126,6 +133,7 @@ void setup()
 
     Serial.println("[STEP 5] Initializing PWM outputs...");
     pwm_manager_init();
+    pwm_manager_set_gesture_expired_cb(gesture_expired_callback);
     Serial.println("[STEP 5] PWM outputs initialized");
 
     Serial.println("========================================");
@@ -143,6 +151,9 @@ void loop()
 
     /* 处理 BLE 接收队列 + 帧重组，触发 ble_data_callback */
     ble_manager_process_data();
+
+    /* 检查手势行程定时是否到期（到期则 6 路回归 1500us + 通知 UI） */
+    pwm_manager_tick();
 
     /* 有新帧时统一刷新一次 UI（数值网格 + 原始帧）+ 更新 PWM 输出 */
     if (s_data_dirty) {

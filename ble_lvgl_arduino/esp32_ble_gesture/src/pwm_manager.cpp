@@ -39,6 +39,20 @@ static bool s_estop = false;
 static bool s_gesture_mode = false;
 static uint16_t s_gesture_us[PWM_CHANNEL_COUNT] = {0};
 
+/* 力度调节：1~10，默认 10。
+ * 高档 = 1500 + level*50，低档 = 1500 - level*50 */
+static uint8_t s_force_level = 10;
+
+/* 行程调节：1~8，默认 1。
+ * 持续时间 = (level + 1) * 500 ms  → 1:1s 2:1.5s ... 8:4.5s */
+static uint8_t s_stroke_level = 1;
+
+/* 手势定时：点击手势后按行程时间输出，到期后 6 路回归 1500us。
+ * rest_pose（初始姿态/回归姿势）不启动定时。 */
+static bool s_gesture_timed = false;
+static uint32_t s_gesture_deadline_ms = 0;
+static pwm_gesture_expired_cb_t s_expired_cb = NULL;
+
 /* 微秒 -> 14bit 占空比 tick 数 */
 static inline uint32_t pwm_us_to_duty(uint16_t us)
 {
@@ -129,10 +143,8 @@ void pwm_manager_init(void)
             ESP_LOGE(TAG, "ledcAttach failed: ch=%u pin=%u", i + 1, pin);
             continue;
         }
-        /* 上电默认输出各自"高"脉宽，避免舵机抖动到中位：
-         * CH1~CH5 -> 2000us，CH6 -> 1750us */
-        uint16_t default_us = (i < PWM_DIRECT_CH_COUNT) ? PWM_OUT_HIGH_US
-                                                        : PWM_OUT_CH6_HIGH_US;
+        /* 上电默认输出中位 1500us（停转），所有 6 路一致 */
+        uint16_t default_us = PWM_OUT_MID_US;
         uint32_t duty = pwm_us_to_duty(default_us);
         ledcWrite(pin, duty);
         s_pwm_us[i] = default_us;
@@ -163,13 +175,14 @@ void pwm_manager_update(const int16_t *values, uint8_t count)
             tag = "[OVR]";
         } else if (i < PWM_DIRECT_CH_COUNT) {
             /* CH1~CH5：直接映射各自 BLE 输入值
-             * <650 -> 2000us，>650 -> 1000us，=650 -> 1500us */
+             * <650 -> 高档，>650 -> 低档，=650 -> 1500us
+             * 高/低档由力度调节滑块决定（默认 2000/1000） */
             if (!has_5) continue;       /* 数据不足，保持上一次输出 */
             int16_t v = values[i];
             if (v < PWM_VALUE_THRESHOLD) {
-                us = PWM_OUT_HIGH_US;
+                us = pwm_manager_get_high_us();
             } else if (v > PWM_VALUE_THRESHOLD) {
-                us = PWM_OUT_LOW_US;
+                us = pwm_manager_get_low_us();
             } else {
                 us = PWM_OUT_MID_US;
             }
@@ -190,6 +203,106 @@ void pwm_manager_update(const int16_t *values, uint8_t count)
             s_pwm_us[i] = us;
             ESP_LOGI(TAG, "CH%u %s -> %uus (duty=%lu)",
                      i + 1, tag, us, (unsigned long)duty);
+        }
+    }
+}
+
+/* ====== 力度调节 ====== */
+void pwm_manager_set_force_level(uint8_t level)
+{
+    if (level < 1) level = 1;
+    if (level > 10) level = 10;
+    if (s_force_level == level) return;
+    s_force_level = level;
+    /* 高/低档变化后，强制下次 update 重写所有硬件（即使脉宽恰好相同） */
+    for (uint8_t i = 0; i < PWM_CHANNEL_COUNT; i++) {
+        s_pwm_us[i] = 0;
+    }
+    ESP_LOGI(TAG, "Force level -> %u (high=%uus, low=%uus)",
+             level, pwm_manager_get_high_us(), pwm_manager_get_low_us());
+}
+
+uint8_t pwm_manager_get_force_level(void)
+{
+    return s_force_level;
+}
+
+uint16_t pwm_manager_get_high_us(void)
+{
+    return (uint16_t)(1500 + s_force_level * 50);
+}
+
+uint16_t pwm_manager_get_low_us(void)
+{
+    return (uint16_t)(1500 - s_force_level * 50);
+}
+
+/* ====== 行程调节 ====== */
+void pwm_manager_set_stroke_level(uint8_t level)
+{
+    if (level < 1) level = 1;
+    if (level > 10) level = 10;
+    if (s_stroke_level == level) return;
+    s_stroke_level = level;
+    ESP_LOGI(TAG, "Stroke level -> %u (%lu ms)",
+             level, (unsigned long)pwm_manager_get_stroke_duration_ms());
+}
+
+uint8_t pwm_manager_get_stroke_level(void)
+{
+    return s_stroke_level;
+}
+
+uint32_t pwm_manager_get_stroke_duration_ms(void)
+{
+    /* 1->1000ms, 2->1500ms, ... 10->5500ms */
+    return (uint32_t)(s_stroke_level + 1) * 500;
+}
+
+/* ====== 手势定时输出 ====== */
+void pwm_manager_set_gesture_expired_cb(pwm_gesture_expired_cb_t cb)
+{
+    s_expired_cb = cb;
+}
+
+void pwm_manager_set_gesture_outputs_timed(const uint16_t *us, uint8_t count, bool rest_pose)
+{
+    /* 先设置输出（立即刷新硬件） */
+    pwm_manager_set_gesture_outputs(us, count);
+
+    if (rest_pose) {
+        /* 初始姿态/回归姿势：不启动定时，持续输出 */
+        s_gesture_timed = false;
+    } else {
+        /* 训练手势：启动定时，到期后 6 路回归 1500us */
+        s_gesture_deadline_ms = millis() + pwm_manager_get_stroke_duration_ms();
+        s_gesture_timed = true;
+        ESP_LOGI(TAG, "Gesture timed: %lu ms -> then 1500us",
+                 (unsigned long)pwm_manager_get_stroke_duration_ms());
+    }
+}
+
+void pwm_manager_tick(void)
+{
+    if (!s_gesture_timed) return;
+    /* 急停或手势模式关闭时，定时无意义（硬件已由急停/BLE 控制） */
+    if (s_estop || !s_gesture_mode) {
+        s_gesture_timed = false;
+        return;
+    }
+    /* 检查是否到期 */
+    if ((int32_t)(millis() - s_gesture_deadline_ms) >= 0) {
+        s_gesture_timed = false;
+        /* 6 路回归 1500us */
+        uint16_t mid[PWM_CHANNEL_COUNT];
+        for (uint8_t i = 0; i < PWM_CHANNEL_COUNT; i++) {
+            mid[i] = PWM_OUT_MID_US;
+        }
+        pwm_manager_set_gesture_outputs(mid, PWM_CHANNEL_COUNT);
+        ESP_LOGI(TAG, "Gesture timed out -> all channels 1500us");
+        /* 通知 UI 更新 */
+        if (s_expired_cb) {
+            s_expired_cb();
         }
     }
 }

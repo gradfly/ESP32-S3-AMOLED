@@ -37,6 +37,9 @@ void ui_clear_pwm(void);
 /* 用最新一帧刷新手势识别屏（取前 5 路按阈值 650 匹配手势图形） */
 void ui_update_gesture_recv(const int16_t *values, uint8_t count);
 
+/* 手势定时到期回调：更新手势屏底部汇总为 6 路 1500us */
+void ui_gesture_expired(void);
+
 #ifdef __cplusplus
 }
 #endif

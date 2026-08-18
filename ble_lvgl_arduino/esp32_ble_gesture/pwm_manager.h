@@ -84,6 +84,39 @@ bool pwm_manager_get_gesture_mode(void);
  * 可在任意时刻调用（未开启手势模式时仅缓存，不刷新硬件）。 */
 void pwm_manager_set_gesture_outputs(const uint16_t *us, uint8_t count);
 
+/* ====== 力度调节（Force Level）======
+ * 滑块数值 1~10，默认 10。影响 CH1~CH5 的高/低档输出脉宽：
+ *   高档 = 1500 + level*50，低档 = 1500 - level*50
+ *   (1:1550,1450) (2:1600,1400) ... (10:2000,1000)
+ * CH6 的 1750/1400 不受力度调节影响。
+ * 初始姿态（回归姿势）和急停也不受理度调节影响。 */
+void pwm_manager_set_force_level(uint8_t level);
+uint8_t pwm_manager_get_force_level(void);
+uint16_t pwm_manager_get_high_us(void);
+uint16_t pwm_manager_get_low_us(void);
+
+/* ====== 行程调节（Stroke Level）======
+ * 滑块数值 1~8。仅影响训练模式手势输出的持续时间：
+ *   (1:1s) (2:1.5s) (3:2s) (4:2.5s) (5:3s) (6:3.5s) (7:4s) (8:4.5s)
+ * 到达时间后 6 路 PWM 回归 1500us。
+ * 初始姿态和急停不受行程调节影响（无定时）。 */
+void pwm_manager_set_stroke_level(uint8_t level);
+uint8_t pwm_manager_get_stroke_level(void);
+uint32_t pwm_manager_get_stroke_duration_ms(void);
+
+/* 设置手势输出并按行程时间定时（仅 training 模式手势点击使用）。
+ * rest_pose=true 时不启动定时（初始姿态/回归姿势不受行程影响）。
+ * 到达行程时间后 6 路 PWM 自动回归 1500us，并触发 expired 回调。 */
+void pwm_manager_set_gesture_outputs_timed(const uint16_t *us, uint8_t count, bool rest_pose);
+
+/* 手势定时到期回调：在 pwm_manager_tick() 检测到定时到期、
+ * 6 路已回归 1500us 后被调用，用于通知 UI 更新显示。 */
+typedef void (*pwm_gesture_expired_cb_t)(void);
+void pwm_manager_set_gesture_expired_cb(pwm_gesture_expired_cb_t cb);
+
+/* 在主循环中周期调用：检查手势定时是否到期，到期则 6 路回归 1500us。 */
+void pwm_manager_tick(void);
+
 #ifdef __cplusplus
 }
 #endif
