@@ -6,6 +6,24 @@
 #include "esp_log.h"
 #include <string.h>
 
+/* ====== 深色主题颜色定义（参考技术文档图4-6深色风格）====== */
+#define COLOR_BG               0x1A1A2E  /* 主背景：深蓝紫 */
+#define COLOR_BG_HEADER        0x16213E  /* 顶部状态栏背景 */
+#define COLOR_BG_DARK          0x0D1117  /* 更暗区域背景 */
+#define COLOR_CARD             0x1E1E38  /* 卡片/格子背景 */
+#define COLOR_ACCENT           0x00D2FF  /* 主强调色：亮青蓝 */
+#define COLOR_ACCENT_DARK      0x0066CC  /* 深强调色：选中项背景 */
+#define COLOR_CONNECTED        0x4ADE80  /* 连接状态：绿色 */
+#define COLOR_ESTOP            0xDC143C  /* 急停按钮：红色 */
+#define COLOR_ESTOP_ACTIVE    0x8B0000  /* 急停激活态：暗红 */
+#define COLOR_ESTOP_BORDER    0xFFEB3B  /* 急停激活边框：黄色 */
+#define COLOR_TEXT_PRIMARY     0xAAAAAA  /* 主文字：浅灰 */
+#define COLOR_TEXT_SECONDARY   0x888888  /* 次要文字：中灰 */
+#define COLOR_TEXT_MUTED       0x555555  /* 更暗文字：深灰 */
+#define COLOR_BORDER          0x222222  /* 分割线/边框 */
+#define COLOR_BORDER_INACTIVE 0x333333  /* 非激活边框 */
+#define COLOR_BTN_SECONDARY   0x4A4A5E  /* 次要按钮背景 */
+
 /* 中文字体声明（由 lv_font_conv 生成，基于 msyh 字体） */
 extern const lv_font_t lv_font_cjk_14;
 
@@ -325,8 +343,8 @@ static void setup_screen_swipe(lv_obj_t *screen)
 /* ====== 手势屏专用边缘滑动（不在线性顺序中） ======
  * 手势屏由主屏 "自主训练" 按钮进入，仅右边缘左滑返回主屏。
  * 不复用 swipe_do_switch（手势屏不在 s_swipe_order 中，cur_idx 会<0）。
- * 返回主屏前：6 路 PWM 输出回归姿势 1750/2000/2000/2000/2000/2000us。 */
-static const uint16_t s_gesture_rest_pose[PWM_CHANNEL_COUNT] = {1750,2000,2000,2000,2000,2000};
+ * 返回主屏前：6 路 PWM 输出回归姿势 1350/2000/2000/2000/2000/2000us。 */
+static const uint16_t s_gesture_rest_pose[PWM_CHANNEL_COUNT] = {1350,2000,2000,2000,2000,2000};
 
 static void gesture_swipe_to_main(void)
 {
@@ -337,6 +355,12 @@ static void gesture_swipe_to_main(void)
     /* 返回主屏前设置回归姿势（手势模式仍开启，立即刷新硬件）。
      * 回归姿势为初始姿态，不受行程定时影响（rest_pose=true） */
     pwm_manager_set_gesture_outputs_timed(s_gesture_rest_pose, PWM_CHANNEL_COUNT, true);
+
+    /* 关闭手势模式，释放 PWM 输出控制权给 BLE 自动映射。
+     * 不关闭会导致返回主屏后 s_gesture_mode 仍为 true，loop() 中的
+     * pwm_manager_update() 持续输出 s_gesture_us[] 而忽略 BLE 输入，
+     * 表现为舵机无反应。 */
+    pwm_manager_set_gesture_mode(false);
 
     SemaphoreHandle_t mux = get_lvgl_mutex();
     if (!mux) return;
@@ -352,10 +376,10 @@ static void gesture_swipe_to_main(void)
     }
     for (uint8_t i = 0; i < GESTURE_COUNT; i++) {
         if (s_gesture_cells[i]) {
-            lv_obj_set_style_bg_color(s_gesture_cells[i], lv_color_hex(0xF2F2F7), 0);
+            lv_obj_set_style_bg_color(s_gesture_cells[i], lv_color_hex(COLOR_CARD), 0);
         }
         if (s_gesture_name_labels[i]) {
-            lv_obj_set_style_text_color(s_gesture_name_labels[i], lv_color_hex(0x333333), 0);
+            lv_obj_set_style_text_color(s_gesture_name_labels[i], lv_color_hex(COLOR_TEXT_PRIMARY), 0);
         }
     }
     s_selected_gesture = 0xFF;
@@ -403,27 +427,31 @@ void ui_init(void)
         return;
     }
 
+    lv_disp_set_bg_color(disp, lv_color_hex(COLOR_BG));
+    lv_disp_set_bg_opa(disp, LV_OPA_COVER);
+
     lv_style_init(&s_btn_style);
     lv_style_init(&s_label_style);
     lv_style_init(&s_title_style);
     lv_style_init(&s_list_item_selected_style);
 
-    lv_style_set_bg_color(&s_btn_style, lv_color_hex(0x007AFF));
+    lv_style_set_bg_color(&s_btn_style, lv_color_hex(COLOR_ACCENT_DARK));
     lv_style_set_radius(&s_btn_style, 8);
     lv_style_set_text_color(&s_btn_style, lv_color_white());
     lv_style_set_pad_all(&s_btn_style, 12);
+    lv_style_set_shadow_width(&s_btn_style, 0);
 
-    lv_style_set_text_color(&s_label_style, lv_color_hex(0x333333));
+    lv_style_set_text_color(&s_label_style, lv_color_hex(COLOR_TEXT_PRIMARY));
     lv_style_set_text_font(&s_label_style, &lv_font_montserrat_14);
 
-    lv_style_set_text_color(&s_title_style, lv_color_hex(0x007AFF));
+    lv_style_set_text_color(&s_title_style, lv_color_hex(COLOR_ACCENT));
     lv_style_set_text_font(&s_title_style, &lv_font_montserrat_24);
 
     /* 设备列表项选中样式：蓝底白字（仅在 LV_STATE_CHECKED 状态下生效） */
-    lv_style_set_bg_color(&s_list_item_selected_style, lv_color_hex(0x007AFF));
+    lv_style_set_bg_color(&s_list_item_selected_style, lv_color_hex(COLOR_ACCENT_DARK));
     lv_style_set_bg_opa(&s_list_item_selected_style, LV_OPA_COVER);
     lv_style_set_text_color(&s_list_item_selected_style, lv_color_white());
-    lv_style_set_border_color(&s_list_item_selected_style, lv_color_hex(0x0051D5));
+    lv_style_set_border_color(&s_list_item_selected_style, lv_color_hex(COLOR_ACCENT_DARK));
     lv_style_set_border_width(&s_list_item_selected_style, 2);
     lv_style_set_radius(&s_list_item_selected_style, 6);
 
@@ -453,7 +481,9 @@ static void create_main_screen(void)
 {
     s_screen_main = lv_obj_create(NULL);
     lv_obj_set_size(s_screen_main, EXAMPLE_LCD_H_RES, EXAMPLE_LCD_V_RES);
-    lv_obj_set_style_bg_color(s_screen_main, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_set_style_bg_color(s_screen_main, lv_color_hex(COLOR_BG), 0);
+    lv_obj_set_style_border_width(s_screen_main, 0, 0);
+    lv_obj_set_style_pad_all(s_screen_main, 0, 0);
 
     lv_obj_t *title = lv_label_create(s_screen_main);
     lv_label_set_text(title, "Select Mode");
@@ -492,19 +522,24 @@ static void create_main_screen(void)
     lv_obj_t *force_title = lv_label_create(s_screen_main);
     lv_label_set_text(force_title, "Force");
     lv_obj_set_style_text_font(force_title, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(force_title, lv_color_hex(0x333333), 0);
+    lv_obj_set_style_text_color(force_title, lv_color_hex(COLOR_TEXT_PRIMARY), 0);
     lv_obj_align(force_title, LV_ALIGN_TOP_LEFT, 20, 270);
 
     s_force_value_label = lv_label_create(s_screen_main);
     lv_label_set_text(s_force_value_label, "10");
     lv_obj_set_style_text_font(s_force_value_label, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(s_force_value_label, lv_color_hex(0x007AFF), 0);
+    lv_obj_set_style_text_color(s_force_value_label, lv_color_hex(COLOR_ACCENT), 0);
     lv_obj_align(s_force_value_label, LV_ALIGN_TOP_RIGHT, -20, 270);
 
     s_force_slider = lv_slider_create(s_screen_main);
     lv_obj_set_width(s_force_slider, 240);
     lv_slider_set_range(s_force_slider, 1, 10);
     lv_slider_set_value(s_force_slider, 10, LV_ANIM_OFF);
+    lv_obj_set_style_bg_color(s_force_slider, lv_color_hex(COLOR_BORDER), 0);
+    lv_obj_set_style_bg_color(s_force_slider, lv_color_hex(COLOR_ACCENT), LV_PART_INDICATOR);
+    lv_obj_set_style_bg_color(s_force_slider, lv_color_hex(COLOR_ACCENT), LV_PART_KNOB);
+    lv_obj_set_style_border_color(s_force_slider, lv_color_hex(COLOR_BG), LV_PART_KNOB);
+    lv_obj_set_style_border_width(s_force_slider, 2, LV_PART_KNOB);
     lv_obj_align(s_force_slider, LV_ALIGN_TOP_MID, 0, 295);
     lv_obj_add_event_cb(s_force_slider, event_force_slider_cb, LV_EVENT_VALUE_CHANGED, NULL);
 
@@ -513,19 +548,24 @@ static void create_main_screen(void)
     lv_obj_t *stroke_title = lv_label_create(s_screen_main);
     lv_label_set_text(stroke_title, "Stroke");
     lv_obj_set_style_text_font(stroke_title, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(stroke_title, lv_color_hex(0x333333), 0);
+    lv_obj_set_style_text_color(stroke_title, lv_color_hex(COLOR_TEXT_PRIMARY), 0);
     lv_obj_align(stroke_title, LV_ALIGN_TOP_LEFT, 20, 340);
 
     s_stroke_value_label = lv_label_create(s_screen_main);
     lv_label_set_text(s_stroke_value_label, "8");
     lv_obj_set_style_text_font(s_stroke_value_label, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(s_stroke_value_label, lv_color_hex(0x007AFF), 0);
+    lv_obj_set_style_text_color(s_stroke_value_label, lv_color_hex(COLOR_ACCENT), 0);
     lv_obj_align(s_stroke_value_label, LV_ALIGN_TOP_RIGHT, -20, 340);
 
     s_stroke_slider = lv_slider_create(s_screen_main);
     lv_obj_set_width(s_stroke_slider, 240);
     lv_slider_set_range(s_stroke_slider, 1, 10);
     lv_slider_set_value(s_stroke_slider, 8, LV_ANIM_OFF);
+    lv_obj_set_style_bg_color(s_stroke_slider, lv_color_hex(COLOR_BORDER), 0);
+    lv_obj_set_style_bg_color(s_stroke_slider, lv_color_hex(COLOR_ACCENT), LV_PART_INDICATOR);
+    lv_obj_set_style_bg_color(s_stroke_slider, lv_color_hex(COLOR_ACCENT), LV_PART_KNOB);
+    lv_obj_set_style_border_color(s_stroke_slider, lv_color_hex(COLOR_BG), LV_PART_KNOB);
+    lv_obj_set_style_border_width(s_stroke_slider, 2, LV_PART_KNOB);
     lv_obj_align(s_stroke_slider, LV_ALIGN_TOP_MID, 0, 365);
     lv_obj_add_event_cb(s_stroke_slider, event_stroke_slider_cb, LV_EVENT_VALUE_CHANGED, NULL);
 
@@ -538,7 +578,9 @@ static void create_list_screen(void)
 {
     s_screen_list = lv_obj_create(NULL);
     lv_obj_set_size(s_screen_list, EXAMPLE_LCD_H_RES, EXAMPLE_LCD_V_RES);
-    lv_obj_set_style_bg_color(s_screen_list, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_set_style_bg_color(s_screen_list, lv_color_hex(COLOR_BG), 0);
+    lv_obj_set_style_border_width(s_screen_list, 0, 0);
+    lv_obj_set_style_pad_all(s_screen_list, 0, 0);
 
     lv_obj_t *title = lv_label_create(s_screen_list);
     lv_label_set_text(title, "Devices");
@@ -548,6 +590,8 @@ static void create_list_screen(void)
     lv_obj_t *back_btn = lv_btn_create(s_screen_list);
     lv_obj_set_size(back_btn, 60, 40);
     lv_obj_align(back_btn, LV_ALIGN_TOP_LEFT, 10, 15);
+    lv_obj_set_style_bg_color(back_btn, lv_color_hex(COLOR_BTN_SECONDARY), 0);
+    lv_obj_set_style_shadow_width(back_btn, 0, 0);
     lv_obj_t *back_label = lv_label_create(back_btn);
     lv_label_set_text(back_label, "Back");
     lv_obj_set_style_text_font(back_label, &lv_font_montserrat_16, 0);
@@ -557,6 +601,14 @@ static void create_list_screen(void)
     s_scan_list = lv_list_create(s_screen_list);
     lv_obj_set_size(s_scan_list, EXAMPLE_LCD_H_RES - 20, 300);
     lv_obj_align(s_scan_list, LV_ALIGN_TOP_MID, 0, 70);
+    lv_obj_set_style_bg_opa(s_scan_list, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(s_scan_list, 0, 0);
+    lv_obj_set_style_bg_color(s_scan_list, lv_color_hex(COLOR_BG), LV_PART_ITEMS);
+    lv_obj_set_style_bg_opa(s_scan_list, LV_OPA_COVER, LV_PART_ITEMS);
+    lv_obj_set_style_text_color(s_scan_list, lv_color_hex(COLOR_TEXT_PRIMARY), LV_PART_ITEMS);
+    lv_obj_set_style_border_color(s_scan_list, lv_color_hex(COLOR_BORDER), LV_PART_ITEMS);
+    lv_obj_set_style_border_width(s_scan_list, 1, LV_PART_ITEMS);
+    lv_obj_set_style_border_side(s_scan_list, LV_BORDER_SIDE_BOTTOM, LV_PART_ITEMS);
 
     s_connect_btn = lv_btn_create(s_screen_list);
     lv_obj_add_style(s_connect_btn, &s_btn_style, 0);
@@ -574,7 +626,9 @@ static void create_data_screen(void)
 {
     s_screen_data = lv_obj_create(NULL);
     lv_obj_set_size(s_screen_data, EXAMPLE_LCD_H_RES, EXAMPLE_LCD_V_RES);
-    lv_obj_set_style_bg_color(s_screen_data, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_set_style_bg_color(s_screen_data, lv_color_hex(COLOR_BG), 0);
+    lv_obj_set_style_border_width(s_screen_data, 0, 0);
+    lv_obj_set_style_pad_all(s_screen_data, 0, 0);
 
     lv_obj_t *title = lv_label_create(s_screen_data);
     lv_label_set_text(title, "BLE Data");
@@ -596,7 +650,7 @@ static void create_data_screen(void)
     s_data_status_label = lv_label_create(s_screen_data);
     lv_label_set_text(s_data_status_label, "Connecting...");
     lv_obj_add_style(s_data_status_label, &s_label_style, 0);
-    lv_obj_set_style_text_color(s_data_status_label, lv_color_hex(0x34C759), 0);
+    lv_obj_set_style_text_color(s_data_status_label, lv_color_hex(COLOR_CONNECTED), 0);
     lv_obj_align(s_data_status_label, LV_ALIGN_TOP_MID, 0, 52);
 
     /* 11 通道数值网格：2 列手动定位，每格显示 "ChN" + 4 位数值。
@@ -618,7 +672,7 @@ static void create_data_screen(void)
         lv_obj_t *cell = lv_obj_create(s_value_grid);
         lv_obj_set_pos(cell, x, y);
         lv_obj_set_size(cell, 124, 42);
-        lv_obj_set_style_bg_color(cell, lv_color_hex(0xF2F2F7), 0);
+        lv_obj_set_style_bg_color(cell, lv_color_hex(COLOR_CARD), 0);
         lv_obj_set_style_radius(cell, 6, 0);
         lv_obj_set_style_pad_all(cell, 3, 0);
         lv_obj_set_style_border_width(cell, 0, 0);
@@ -627,13 +681,13 @@ static void create_data_screen(void)
         lv_obj_t *t = lv_label_create(cell);
         lv_label_set_text_fmt(t, "Ch%d", i + 1);
         lv_obj_set_style_text_font(t, &lv_font_montserrat_12, 0);
-        lv_obj_set_style_text_color(t, lv_color_hex(0x8E8E93), 0);
+        lv_obj_set_style_text_color(t, lv_color_hex(COLOR_ACCENT), 0);
         lv_obj_align(t, LV_ALIGN_TOP_LEFT, 4, 2);
 
         lv_obj_t *v = lv_label_create(cell);
         lv_label_set_text(v, "----");
         lv_obj_set_style_text_font(v, &lv_font_montserrat_20, 0);
-        lv_obj_set_style_text_color(v, lv_color_hex(0x007AFF), 0);
+        lv_obj_set_style_text_color(v, lv_color_hex(COLOR_ACCENT), 0);
         lv_obj_align(v, LV_ALIGN_BOTTOM_RIGHT, -4, -2);
 
         s_cells[i].title = t;
@@ -644,7 +698,7 @@ static void create_data_screen(void)
     s_raw_label = lv_label_create(s_screen_data);
     lv_label_set_text(s_raw_label, "Raw: --");
     lv_obj_add_style(s_raw_label, &s_label_style, 0);
-    lv_obj_set_style_text_color(s_raw_label, lv_color_hex(0x8E8E93), 0);
+    lv_obj_set_style_text_color(s_raw_label, lv_color_hex(COLOR_TEXT_SECONDARY), 0);
     lv_obj_set_width(s_raw_label, EXAMPLE_LCD_H_RES - 16);
     lv_label_set_long_mode(s_raw_label, LV_LABEL_LONG_DOT);
     lv_obj_align(s_raw_label, LV_ALIGN_TOP_MID, 0, 368);
@@ -661,7 +715,7 @@ static void create_data_screen(void)
 
     lv_obj_t *clear_btn = lv_btn_create(s_screen_data);
     lv_obj_add_style(clear_btn, &s_btn_style, 0);
-    lv_obj_set_style_bg_color(clear_btn, lv_color_hex(0x8E8E93), 0);
+    lv_obj_set_style_bg_color(clear_btn, lv_color_hex(COLOR_BTN_SECONDARY), 0);
     lv_obj_set_size(clear_btn, 120, 42);
     lv_obj_align(clear_btn, LV_ALIGN_BOTTOM_RIGHT, -10, -10);
     lv_obj_t *clear_label = lv_label_create(clear_btn);
@@ -678,7 +732,9 @@ static void create_pwm_screen(void)
 {
     s_screen_pwm = lv_obj_create(NULL);
     lv_obj_set_size(s_screen_pwm, EXAMPLE_LCD_H_RES, EXAMPLE_LCD_V_RES);
-    lv_obj_set_style_bg_color(s_screen_pwm, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_set_style_bg_color(s_screen_pwm, lv_color_hex(COLOR_BG), 0);
+    lv_obj_set_style_border_width(s_screen_pwm, 0, 0);
+    lv_obj_set_style_pad_all(s_screen_pwm, 0, 0);
 
     lv_obj_t *title = lv_label_create(s_screen_pwm);
     lv_label_set_text(title, "PWM Output");
@@ -697,7 +753,7 @@ static void create_pwm_screen(void)
     s_pwm_status_label = lv_label_create(s_screen_pwm);
     lv_label_set_text(s_pwm_status_label, "Connecting...");
     lv_obj_add_style(s_pwm_status_label, &s_label_style, 0);
-    lv_obj_set_style_text_color(s_pwm_status_label, lv_color_hex(0x34C759), 0);
+    lv_obj_set_style_text_color(s_pwm_status_label, lv_color_hex(COLOR_CONNECTED), 0);
     lv_obj_align(s_pwm_status_label, LV_ALIGN_TOP_MID, 0, 52);
 
     /* 6 格网格：2 列手动定位（CH1~CH5 硬件通道 + CH6 显示镜像）。
@@ -721,7 +777,7 @@ static void create_pwm_screen(void)
         lv_obj_t *cell = lv_obj_create(grid);
         lv_obj_set_pos(cell, x, y);
         lv_obj_set_size(cell, 124, 42);
-        lv_obj_set_style_bg_color(cell, lv_color_hex(0xF2F2F7), 0);
+        lv_obj_set_style_bg_color(cell, lv_color_hex(COLOR_CARD), 0);
         lv_obj_set_style_radius(cell, 6, 0);
         lv_obj_set_style_pad_all(cell, 3, 0);
         lv_obj_set_style_border_width(cell, 0, 0);
@@ -737,21 +793,21 @@ static void create_pwm_screen(void)
         lv_obj_t *t = lv_label_create(cell);
         lv_label_set_text_fmt(t, "Ch%d", i + 1);
         lv_obj_set_style_text_font(t, &lv_font_montserrat_12, 0);
-        lv_obj_set_style_text_color(t, lv_color_hex(0x8E8E93), 0);
+        lv_obj_set_style_text_color(t, lv_color_hex(COLOR_ACCENT), 0);
         lv_obj_align(t, LV_ALIGN_TOP_LEFT, 4, 2);
 
         /* 右上：输入值（CH1~CH5 取自身 BLE 值；CH6 取 CH1 输入值） */
         lv_obj_t *in_lbl = lv_label_create(cell);
         lv_label_set_text(in_lbl, "----");
         lv_obj_set_style_text_font(in_lbl, &lv_font_montserrat_12, 0);
-        lv_obj_set_style_text_color(in_lbl, lv_color_hex(0x8E8E93), 0);
+        lv_obj_set_style_text_color(in_lbl, lv_color_hex(COLOR_TEXT_SECONDARY), 0);
         lv_obj_align(in_lbl, LV_ALIGN_TOP_RIGHT, -4, 2);
 
-        /* 右下：输出 PWM（CH1~5: 2000绿/1000蓝; CH6: 1750绿/1400蓝; 1500灰） */
+        /* 右下：输出 PWM（CH1~5: 2000绿/1000蓝; CH6: 1350绿/1800蓝; 1500灰） */
         lv_obj_t *out_lbl = lv_label_create(cell);
         lv_label_set_text(out_lbl, "----");
         lv_obj_set_style_text_font(out_lbl, &lv_font_montserrat_20, 0);
-        lv_obj_set_style_text_color(out_lbl, lv_color_hex(0x8E8E93), 0);
+        lv_obj_set_style_text_color(out_lbl, lv_color_hex(COLOR_TEXT_SECONDARY), 0);
         lv_obj_align(out_lbl, LV_ALIGN_BOTTOM_RIGHT, -4, -2);
 
         s_pwm_cells[i].cell   = cell;
@@ -765,7 +821,7 @@ static void create_pwm_screen(void)
     s_estop_btn = lv_btn_create(grid);
     lv_obj_set_pos(s_estop_btn, 4, 150);          /* row2(y=138) 下方留 12px */
     lv_obj_set_size(s_estop_btn, 256, 70);
-    lv_obj_set_style_bg_color(s_estop_btn, lv_color_hex(0xFF3B30), 0);
+    lv_obj_set_style_bg_color(s_estop_btn, lv_color_hex(COLOR_ESTOP), 0);
     lv_obj_set_style_radius(s_estop_btn, 10, 0);
     lv_obj_set_style_shadow_width(s_estop_btn, 0, 0);
     lv_obj_set_style_pad_all(s_estop_btn, 0, 0);
@@ -782,7 +838,7 @@ static void create_pwm_screen(void)
     lv_obj_set_style_text_font(s_pwm_info_label, &lv_font_montserrat_12, 0);
     lv_obj_add_style(s_pwm_info_label, &s_label_style, 0);
     lv_obj_center(s_pwm_info_label);
-    lv_obj_set_style_text_color(s_pwm_info_label, lv_color_hex(0x333333), 0);
+    lv_obj_set_style_text_color(s_pwm_info_label, lv_color_hex(COLOR_TEXT_PRIMARY), 0);
     lv_obj_set_style_text_align(s_pwm_info_label, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_width(s_pwm_info_label, EXAMPLE_LCD_H_RES - 16);
     /* WRAP 模式：按设置的宽度自动换行；需配合 recolor=off 避免解析开销 */
@@ -802,7 +858,7 @@ static void create_pwm_screen(void)
 
     lv_obj_t *clear_btn = lv_btn_create(s_screen_pwm);
     lv_obj_add_style(clear_btn, &s_btn_style, 0);
-    lv_obj_set_style_bg_color(clear_btn, lv_color_hex(0x8E8E93), 0);
+    lv_obj_set_style_bg_color(clear_btn, lv_color_hex(COLOR_BTN_SECONDARY), 0);
     lv_obj_set_size(clear_btn, 120, 42);
     lv_obj_align(clear_btn, LV_ALIGN_BOTTOM_RIGHT, -10, -10);
     lv_obj_t *clear_label = lv_label_create(clear_btn);
@@ -825,25 +881,27 @@ typedef struct {
     uint16_t            pwm[PWM_CHANNEL_COUNT];  /* 点击该手势时 6 路输出脉宽(us) */
 } gesture_entry_t;
 static const gesture_entry_t s_gestures[GESTURE_COUNT] = {
-    { &img_gesture_1,    "1",    {1000,2000,1000,1000,1000,1400} },
-    { &img_gesture_2,    "2",    {1000,2000,2000,1000,1000,1400} },
-    { &img_gesture_3,    "3",    {1000,2000,2000,2000,1000,1400} },
-    { &img_gesture_4,    "4",    {1000,2000,2000,2000,2000,1400} },
-    { &img_gesture_5,    "5",    {2000,2000,2000,2000,2000,1750} },
-    { &img_gesture_6,    "6",    {2000,1000,1000,1000,2000,1750} },
-    { &img_gesture_7,    "7",    {2000,2000,2000,1000,1000,1750} },
-    { &img_gesture_8,    "8",    {2000,2000,1000,1000,1000,1750} },
-    { &img_gesture_10,   "10",   {1000,1000,1000,1000,1000,1400} },
-    { &img_gesture_ok,   "ok",   {1000,1000,2000,2000,2000,1400} },
-    { &img_gesture_good, "good", {2000,1000,1000,1000,1000,1750} },
-    { &img_gesture_love, "love", {2000,2000,1000,1000,2000,1750} },
+    { &img_gesture_1,    "1",    {1000,2000,1000,1000,1000,1800} },
+    { &img_gesture_2,    "2",    {1000,2000,2000,1000,1000,1800} },
+    { &img_gesture_3,    "3",    {1000,2000,2000,2000,1000,1800} },
+    { &img_gesture_4,    "4",    {1000,2000,2000,2000,2000,1800} },
+    { &img_gesture_5,    "5",    {2000,2000,2000,2000,2000,1350} },
+    { &img_gesture_6,    "6",    {2000,1000,1000,1000,2000,1350} },
+    { &img_gesture_7,    "7",    {2000,2000,2000,1000,1000,1350} },
+    { &img_gesture_8,    "8",    {2000,2000,1000,1000,1000,1350} },
+    { &img_gesture_10,   "10",   {1000,1000,1000,1000,1000,1800} },
+    { &img_gesture_ok,   "ok",   {1000,1000,2000,2000,2000,1800} },
+    { &img_gesture_good, "good", {2000,1000,1000,1000,1000,1350} },
+    { &img_gesture_love, "love", {2000,2000,1000,1000,2000,1350} },
 };
 
 static void create_gesture_screen(void)
 {
     s_screen_gesture = lv_obj_create(NULL);
     lv_obj_set_size(s_screen_gesture, EXAMPLE_LCD_H_RES, EXAMPLE_LCD_V_RES);
-    lv_obj_set_style_bg_color(s_screen_gesture, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_set_style_bg_color(s_screen_gesture, lv_color_hex(COLOR_BG), 0);
+    lv_obj_set_style_border_width(s_screen_gesture, 0, 0);
+    lv_obj_set_style_pad_all(s_screen_gesture, 0, 0);
 
     lv_obj_t *title = lv_label_create(s_screen_gesture);
     lv_label_set_text(title, "Gesture");
@@ -855,7 +913,7 @@ static void create_gesture_screen(void)
     lv_label_set_text(s_gesture_status_label, "12 Gestures");
     lv_obj_add_style(s_gesture_status_label, &s_label_style, 0);
     lv_obj_set_style_text_font(s_gesture_status_label, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(s_gesture_status_label, lv_color_hex(0x8E8E93), 0);
+    lv_obj_set_style_text_color(s_gesture_status_label, lv_color_hex(COLOR_TEXT_SECONDARY), 0);
     lv_obj_align(s_gesture_status_label, LV_ALIGN_TOP_MID, 0, 52);
 
     /* 12 格网格：2 列手动定位，与 PWM 屏同尺寸同间距（cell 124x42, 间距 46）。
@@ -879,7 +937,7 @@ static void create_gesture_screen(void)
         lv_obj_t *cell = lv_obj_create(grid);
         lv_obj_set_pos(cell, x, y);
         lv_obj_set_size(cell, 124, 42);
-        lv_obj_set_style_bg_color(cell, lv_color_hex(0xF2F2F7), 0);
+        lv_obj_set_style_bg_color(cell, lv_color_hex(COLOR_CARD), 0);
         lv_obj_set_style_radius(cell, 6, 0);
         lv_obj_set_style_pad_all(cell, 3, 0);
         lv_obj_set_style_border_width(cell, 0, 0);
@@ -900,7 +958,7 @@ static void create_gesture_screen(void)
         lv_obj_t *name = lv_label_create(cell);
         lv_label_set_text(name, s_gestures[i].name);
         lv_obj_set_style_text_font(name, &lv_font_montserrat_16, 0);
-        lv_obj_set_style_text_color(name, lv_color_hex(0x333333), 0);
+        lv_obj_set_style_text_color(name, lv_color_hex(COLOR_TEXT_PRIMARY), 0);
         lv_obj_align(name, LV_ALIGN_LEFT_MID, 44, 0);
 
         s_gesture_cells[i] = cell;            /* 保存指针供点击回调匹配 + 选中高亮 */
@@ -912,7 +970,7 @@ static void create_gesture_screen(void)
     lv_label_set_text(s_gesture_info_label, "PWM: ---- ---- ---- ---- ---- ----");
     lv_obj_add_style(s_gesture_info_label, &s_label_style, 0);
     lv_obj_set_style_text_font(s_gesture_info_label, &lv_font_montserrat_12, 0);
-    lv_obj_set_style_text_color(s_gesture_info_label, lv_color_hex(0x333333), 0);
+    lv_obj_set_style_text_color(s_gesture_info_label, lv_color_hex(COLOR_TEXT_PRIMARY), 0);
     lv_obj_set_width(s_gesture_info_label, EXAMPLE_LCD_H_RES - 16);
     lv_label_set_long_mode(s_gesture_info_label, LV_LABEL_LONG_WRAP);
     lv_obj_align(s_gesture_info_label, LV_ALIGN_TOP_MID, 0, 360);
@@ -939,11 +997,11 @@ static void create_gesture_screen(void)
     }
     if (s_gesture_estop_btn) {
         if (init_estop) {
-            lv_obj_set_style_bg_color(s_gesture_estop_btn, lv_color_hex(0xB71C1C), 0);
-            lv_obj_set_style_border_color(s_gesture_estop_btn, lv_color_hex(0xFFEB3B), 0);
+            lv_obj_set_style_bg_color(s_gesture_estop_btn, lv_color_hex(COLOR_ESTOP_ACTIVE), 0);
+            lv_obj_set_style_border_color(s_gesture_estop_btn, lv_color_hex(COLOR_ESTOP_BORDER), 0);
             lv_obj_set_style_border_width(s_gesture_estop_btn, 3, 0);
         } else {
-            lv_obj_set_style_bg_color(s_gesture_estop_btn, lv_color_hex(0xFF3B30), 0);
+            lv_obj_set_style_bg_color(s_gesture_estop_btn, lv_color_hex(COLOR_ESTOP), 0);
             lv_obj_set_style_border_width(s_gesture_estop_btn, 0, 0);
         }
     }
@@ -981,7 +1039,9 @@ static void create_gesture_recv_screen(void)
 {
     s_screen_gesture_recv = lv_obj_create(NULL);
     lv_obj_set_size(s_screen_gesture_recv, EXAMPLE_LCD_H_RES, EXAMPLE_LCD_V_RES);
-    lv_obj_set_style_bg_color(s_screen_gesture_recv, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_set_style_bg_color(s_screen_gesture_recv, lv_color_hex(COLOR_BG), 0);
+    lv_obj_set_style_border_width(s_screen_gesture_recv, 0, 0);
+    lv_obj_set_style_pad_all(s_screen_gesture_recv, 0, 0);
 
     /* 标题 */
     lv_obj_t *title = lv_label_create(s_screen_gesture_recv);
@@ -993,7 +1053,7 @@ static void create_gesture_recv_screen(void)
     s_gesture_recv_status = lv_label_create(s_screen_gesture_recv);
     lv_label_set_text(s_gesture_recv_status, "Connecting...");
     lv_obj_add_style(s_gesture_recv_status, &s_label_style, 0);
-    lv_obj_set_style_text_color(s_gesture_recv_status, lv_color_hex(0x34C759), 0);
+    lv_obj_set_style_text_color(s_gesture_recv_status, lv_color_hex(COLOR_CONNECTED), 0);
     lv_obj_align(s_gesture_recv_status, LV_ALIGN_TOP_MID, 0, 48);
 
     /* 手势图片：居中，3x 放大（36*3=144px） */
@@ -1006,7 +1066,7 @@ static void create_gesture_recv_screen(void)
     s_gesture_recv_name = lv_label_create(s_screen_gesture_recv);
     lv_label_set_text(s_gesture_recv_name, "Gesture 1");
     lv_obj_set_style_text_font(s_gesture_recv_name, &lv_font_montserrat_20, 0);
-    lv_obj_set_style_text_color(s_gesture_recv_name, lv_color_hex(0x1A1A1A), 0);
+    lv_obj_set_style_text_color(s_gesture_recv_name, lv_color_hex(COLOR_ACCENT), 0);
     lv_obj_align(s_gesture_recv_name, LV_ALIGN_TOP_MID, 0, 250);
 
     /* 5 路通道值 + 模式显示 */
@@ -1014,7 +1074,7 @@ static void create_gesture_recv_screen(void)
     lv_label_set_text(s_gesture_recv_values,
                       "CH1:----  CH2:----  CH3:----\nCH4:----  CH5:----\nPattern: - - - - -");
     lv_obj_set_style_text_font(s_gesture_recv_values, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(s_gesture_recv_values, lv_color_hex(0x8E8E93), 0);
+    lv_obj_set_style_text_color(s_gesture_recv_values, lv_color_hex(COLOR_TEXT_SECONDARY), 0);
     lv_obj_set_style_text_align(s_gesture_recv_values, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_align(s_gesture_recv_values, LV_ALIGN_TOP_MID, 0, 290);
 
@@ -1032,7 +1092,7 @@ static void create_gesture_recv_screen(void)
     /* 底部 Clear 按钮 */
     lv_obj_t *clear_btn = lv_btn_create(s_screen_gesture_recv);
     lv_obj_add_style(clear_btn, &s_btn_style, 0);
-    lv_obj_set_style_bg_color(clear_btn, lv_color_hex(0x8E8E93), 0);
+    lv_obj_set_style_bg_color(clear_btn, lv_color_hex(COLOR_BTN_SECONDARY), 0);
     lv_obj_set_size(clear_btn, 120, 42);
     lv_obj_align(clear_btn, LV_ALIGN_BOTTOM_RIGHT, -10, -10);
     lv_obj_t *clear_label = lv_label_create(clear_btn);
@@ -1067,7 +1127,8 @@ static void create_uuid_screen(void)
 {
     s_screen_uuid = lv_obj_create(NULL);
     lv_obj_set_size(s_screen_uuid, EXAMPLE_LCD_H_RES, EXAMPLE_LCD_V_RES);
-    lv_obj_set_style_bg_color(s_screen_uuid, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_set_style_bg_color(s_screen_uuid, lv_color_hex(COLOR_BG), 0);
+    lv_obj_set_style_border_width(s_screen_uuid, 0, 0);
     lv_obj_set_style_pad_all(s_screen_uuid, 8, 0);
 
     lv_obj_t *title = lv_label_create(s_screen_uuid);
@@ -1099,9 +1160,12 @@ static void create_uuid_screen(void)
         lv_textarea_set_max_length(ta, 8);
         lv_textarea_set_text(ta, defaults[i]);
         lv_obj_set_style_text_font(ta, &lv_font_montserrat_16, 0);
-        lv_obj_set_style_border_color(ta, lv_color_hex(0xCCCCCC), 0);
+        lv_obj_set_style_text_color(ta, lv_color_hex(COLOR_TEXT_PRIMARY), 0);
+        lv_obj_set_style_bg_color(ta, lv_color_hex(COLOR_CARD), 0);
+        lv_obj_set_style_border_color(ta, lv_color_hex(COLOR_BORDER_INACTIVE), 0);
         lv_obj_set_style_border_width(ta, 2, 0);
         lv_obj_set_style_radius(ta, 6, 0);
+        lv_obj_set_style_pad_all(ta, 4, 0);
         lv_obj_set_pos(ta, 66, y);
         lv_obj_set_size(ta, 198, 32);
         lv_obj_add_event_cb(ta, event_uuid_field_click_cb, LV_EVENT_CLICKED, NULL);
@@ -1109,7 +1173,7 @@ static void create_uuid_screen(void)
     }
     /* 默认激活服务字段：蓝色边框高亮 */
     s_active_ta = s_ta_service;
-    lv_obj_set_style_border_color(s_ta_service, lv_color_hex(0x007AFF), 0);
+    lv_obj_set_style_border_color(s_ta_service, lv_color_hex(COLOR_ACCENT), 0);
 
     /* 十六进制键盘：4 列 x 5 行，最后一行 DEL/CLR 各跨 2 列 */
     static const char *kb_map[] = {
@@ -1123,9 +1187,14 @@ static void create_uuid_screen(void)
     lv_btnmatrix_set_map(kb, kb_map);
     lv_btnmatrix_set_btn_width(kb, 16, 2);   /* DEL 跨 2 列 */
     lv_btnmatrix_set_btn_width(kb, 17, 2);   /* CLR 跨 2 列 */
-    lv_obj_set_style_bg_color(kb, lv_color_hex(0xF2F2F7), 0);
+    lv_obj_set_style_bg_color(kb, lv_color_hex(COLOR_CARD), 0);
     lv_obj_set_style_pad_all(kb, 4, 0);
     lv_obj_set_style_pad_gap(kb, 4, 0);
+    lv_obj_set_style_bg_color(kb, lv_color_hex(COLOR_BTN_SECONDARY), LV_PART_ITEMS);
+    lv_obj_set_style_text_color(kb, lv_color_hex(COLOR_TEXT_PRIMARY), LV_PART_ITEMS);
+    lv_obj_set_style_bg_color(kb, lv_color_hex(COLOR_ACCENT_DARK), LV_PART_ITEMS | LV_STATE_PRESSED);
+    lv_obj_set_style_border_width(kb, 0, LV_PART_ITEMS);
+    lv_obj_set_style_radius(kb, 4, LV_PART_ITEMS);
     lv_obj_set_pos(kb, 0, 174);
     lv_obj_set_size(kb, 264, 188);
     lv_obj_add_event_cb(kb, event_uuid_keypad_cb, LV_EVENT_VALUE_CHANGED, NULL);
@@ -1134,7 +1203,7 @@ static void create_uuid_screen(void)
     lv_coord_t half_w = (264 - 8) / 2;
     lv_obj_t *cancel_btn = lv_btn_create(s_screen_uuid);
     lv_obj_add_style(cancel_btn, &s_btn_style, 0);
-    lv_obj_set_style_bg_color(cancel_btn, lv_color_hex(0x8E8E93), 0);
+    lv_obj_set_style_bg_color(cancel_btn, lv_color_hex(COLOR_BTN_SECONDARY), 0);
     lv_obj_set_size(cancel_btn, half_w, 44);
     lv_obj_set_pos(cancel_btn, 0, 372);
     lv_obj_t *cancel_lbl = lv_label_create(cancel_btn);
@@ -1160,11 +1229,11 @@ static void event_uuid_field_click_cb(lv_event_t *e)
     /* 激活字段用蓝色边框高亮，其余灰色（本版本无 set_cursor_visible，
      * 边框颜色即唯一激活指示） */
     lv_obj_set_style_border_color(s_ta_service,
-        ta == s_ta_service ? lv_color_hex(0x007AFF) : lv_color_hex(0xCCCCCC), 0);
+        ta == s_ta_service ? lv_color_hex(COLOR_ACCENT) : lv_color_hex(COLOR_BORDER_INACTIVE), 0);
     lv_obj_set_style_border_color(s_ta_notify,
-        ta == s_ta_notify ? lv_color_hex(0x007AFF) : lv_color_hex(0xCCCCCC), 0);
+        ta == s_ta_notify ? lv_color_hex(COLOR_ACCENT) : lv_color_hex(COLOR_BORDER_INACTIVE), 0);
     lv_obj_set_style_border_color(s_ta_write,
-        ta == s_ta_write ? lv_color_hex(0x007AFF) : lv_color_hex(0xCCCCCC), 0);
+        ta == s_ta_write ? lv_color_hex(COLOR_ACCENT) : lv_color_hex(COLOR_BORDER_INACTIVE), 0);
 }
 
 /* 十六进制键盘按键：向当前 textarea 追加字符 / 退格 / 清空 */
@@ -1671,7 +1740,7 @@ void ui_update_pwm_values(const int16_t *values, uint8_t count)
             show_value = false;
         }
 
-        /* 输出 PWM 文字 + 颜色：高档/1750 绿 / 低档/1400 蓝 / 1500 灰 */
+        /* 输出 PWM 文字 + 颜色：高档/1350 绿 / 低档/1800 蓝 / 1500 灰 */
         if (s_pwm_cells[i].output) {
             if (show_value) {
                 lv_label_set_text_fmt(s_pwm_cells[i].output, "%uus", us);
@@ -1679,16 +1748,16 @@ void ui_update_pwm_values(const int16_t *values, uint8_t count)
                 uint16_t high_us = pwm_manager_get_high_us();
                 uint16_t low_us  = pwm_manager_get_low_us();
                 if (us == high_us || us == PWM_OUT_CH6_HIGH_US)
-                    color = lv_color_hex(0x34C759);   /* 绿 */
+                    color = lv_color_hex(COLOR_CONNECTED);   /* 绿 */
                 else if (us == low_us || us == PWM_OUT_CH6_LOW_US)
-                    color = lv_color_hex(0x007AFF);   /* 蓝 */
+                    color = lv_color_hex(COLOR_ACCENT);   /* 蓝 */
                 else
-                    color = lv_color_hex(0x8E8E93);   /* 灰(1500) */
+                    color = lv_color_hex(COLOR_TEXT_SECONDARY);   /* 灰(1500) */
                 lv_obj_set_style_text_color(s_pwm_cells[i].output, color, 0);
             } else {
                 lv_label_set_text(s_pwm_cells[i].output, "----");
                 lv_obj_set_style_text_color(s_pwm_cells[i].output,
-                                            lv_color_hex(0x8E8E93), 0);
+                                            lv_color_hex(COLOR_TEXT_SECONDARY), 0);
             }
         }
 
@@ -1696,7 +1765,7 @@ void ui_update_pwm_values(const int16_t *values, uint8_t count)
         if (s_pwm_cells[i].cell) {
             if (ovr && !estop) {
                 lv_obj_set_style_border_color(s_pwm_cells[i].cell,
-                                              lv_color_hex(0x007AFF), 0);
+                                              lv_color_hex(COLOR_ACCENT), 0);
                 lv_obj_set_style_border_width(s_pwm_cells[i].cell, 2, 0);
             } else {
                 lv_obj_set_style_border_width(s_pwm_cells[i].cell, 0, 0);
@@ -1712,11 +1781,11 @@ void ui_update_pwm_values(const int16_t *values, uint8_t count)
         }
         if (s_estop_btn) {
             if (estop) {
-                lv_obj_set_style_bg_color(s_estop_btn, lv_color_hex(0xB71C1C), 0);
-                lv_obj_set_style_border_color(s_estop_btn, lv_color_hex(0xFFEB3B), 0);
+                lv_obj_set_style_bg_color(s_estop_btn, lv_color_hex(COLOR_ESTOP_ACTIVE), 0);
+                lv_obj_set_style_border_color(s_estop_btn, lv_color_hex(COLOR_ESTOP_BORDER), 0);
                 lv_obj_set_style_border_width(s_estop_btn, 3, 0);
             } else {
-                lv_obj_set_style_bg_color(s_estop_btn, lv_color_hex(0xFF3B30), 0);
+                lv_obj_set_style_bg_color(s_estop_btn, lv_color_hex(COLOR_ESTOP), 0);
                 lv_obj_set_style_border_width(s_estop_btn, 0, 0);
             }
         }
@@ -1727,11 +1796,11 @@ void ui_update_pwm_values(const int16_t *values, uint8_t count)
         }
         if (s_gesture_estop_btn) {
             if (estop) {
-                lv_obj_set_style_bg_color(s_gesture_estop_btn, lv_color_hex(0xB71C1C), 0);
-                lv_obj_set_style_border_color(s_gesture_estop_btn, lv_color_hex(0xFFEB3B), 0);
+                lv_obj_set_style_bg_color(s_gesture_estop_btn, lv_color_hex(COLOR_ESTOP_ACTIVE), 0);
+                lv_obj_set_style_border_color(s_gesture_estop_btn, lv_color_hex(COLOR_ESTOP_BORDER), 0);
                 lv_obj_set_style_border_width(s_gesture_estop_btn, 3, 0);
             } else {
-                lv_obj_set_style_bg_color(s_gesture_estop_btn, lv_color_hex(0xFF3B30), 0);
+                lv_obj_set_style_bg_color(s_gesture_estop_btn, lv_color_hex(COLOR_ESTOP), 0);
                 lv_obj_set_style_border_width(s_gesture_estop_btn, 0, 0);
             }
         }
@@ -1761,7 +1830,7 @@ void ui_clear_pwm(void)
         if (s_pwm_cells[i].output) {
             lv_label_set_text(s_pwm_cells[i].output, "----");
             lv_obj_set_style_text_color(s_pwm_cells[i].output,
-                                        lv_color_hex(0x8E8E93), 0);
+                                        lv_color_hex(COLOR_TEXT_SECONDARY), 0);
         }
         /* 清除覆盖边框（但不清除覆盖状态本身——状态由 pwm_manager 维护） */
         if (s_pwm_cells[i].cell) {
@@ -1924,8 +1993,8 @@ static void event_gesture_cell_click_cb(lv_event_t *e)
     if (idx >= GESTURE_COUNT) return;
 
     /* 设置 6 路 PWM 输出（手势模式已开启，立即刷新硬件）。
-     * 力度调节：将 pose 中的 2000→高档、1000→低档（CH6 的 1400/1750 不变）。
-     * 行程调节：启动定时，到期后 6 路回归 1500us（rest_pose=false） */
+     * 力度调节：将 pose 中的 2000→高档、1000→低档（CH6 的 1800/1350 不变）。
+     * 行程调节：启动定时，到期后 CH1~CH5 回归 1500us（CH6 不受影响，rest_pose=false） */
     uint16_t remapped[PWM_CHANNEL_COUNT];
     remap_gesture_pwm(s_gestures[idx].pwm, remapped);
     pwm_manager_set_gesture_outputs_timed(remapped, PWM_CHANNEL_COUNT, false);
@@ -1937,11 +2006,11 @@ static void event_gesture_cell_click_cb(lv_event_t *e)
             bool sel = (i == idx);
             if (s_gesture_cells[i]) {
                 lv_obj_set_style_bg_color(s_gesture_cells[i],
-                    sel ? lv_color_hex(0x007AFF) : lv_color_hex(0xF2F2F7), 0);
+                    sel ? lv_color_hex(COLOR_ACCENT_DARK) : lv_color_hex(COLOR_CARD), 0);
             }
             if (s_gesture_name_labels[i]) {
                 lv_obj_set_style_text_color(s_gesture_name_labels[i],
-                    sel ? lv_color_white() : lv_color_hex(0x333333), 0);
+                    sel ? lv_color_white() : lv_color_hex(COLOR_TEXT_PRIMARY), 0);
             }
         }
         s_selected_gesture = idx;
@@ -1971,9 +2040,9 @@ static void event_connect_btn_cb(lv_event_t *e)
     lv_textarea_set_text(s_ta_notify, "FFE2");
     lv_textarea_set_text(s_ta_write, "FFE1");
     s_active_ta = s_ta_service;
-    lv_obj_set_style_border_color(s_ta_service, lv_color_hex(0x007AFF), 0);
-    lv_obj_set_style_border_color(s_ta_notify, lv_color_hex(0xCCCCCC), 0);
-    lv_obj_set_style_border_color(s_ta_write, lv_color_hex(0xCCCCCC), 0);
+    lv_obj_set_style_border_color(s_ta_service, lv_color_hex(COLOR_ACCENT), 0);
+    lv_obj_set_style_border_color(s_ta_notify, lv_color_hex(COLOR_BORDER_INACTIVE), 0);
+    lv_obj_set_style_border_color(s_ta_write, lv_color_hex(COLOR_BORDER_INACTIVE), 0);
 }
 
 static void event_disconnect_btn_cb(lv_event_t *e)
@@ -2086,7 +2155,7 @@ static void event_estop_btn_cb(lv_event_t *e)
 
 /* ====== 力度/行程滑块 + 手势定时回调 ====== */
 
-/* 将手势 pose 中的 2000→高档、1000→低档（CH6 的 1400/1750 保持不变）。
+/* 将手势 pose 中的 2000→高档、1000→低档（CH6 的 1800/1350 保持不变）。
  * 力度调节滑块控制 CH1~CH5 的高/低档脉宽，初始姿态不受影响（不经过此函数）。 */
 static void remap_gesture_pwm(const uint16_t *src, uint16_t *dst)
 {
@@ -2098,7 +2167,7 @@ static void remap_gesture_pwm(const uint16_t *src, uint16_t *dst)
         } else if (src[i] == PWM_OUT_LOW_US) {
             dst[i] = low_us;
         } else {
-            dst[i] = src[i];   /* 1400/1750 等 CH6 专用值保持不变 */
+            dst[i] = src[i];   /* 1800/1350 等 CH6 专用值保持不变 */
         }
     }
 }

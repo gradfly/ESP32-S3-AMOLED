@@ -184,6 +184,11 @@ void pwm_manager_init(void)
 
 void pwm_manager_update(const int16_t *values, uint8_t count)
 {
+    /* 加锁保护 s_pwm_us[] / s_gesture_us[] / s_estop / s_gesture_mode 等共享状态，
+     * 防止 LVGL 任务中的手势回调与主 loop 并发修改导致竞态。
+     * 使用递归锁：pwm_manager_set_gesture_outputs() 等已持锁调用方可安全重入。 */
+    pwm_lock();
+
     /* CH1~CH5 需要 count>=5 才能自动更新；CH6 仅需 CH1 输入值(count>=1)。
      * 覆盖/急停通道不受数据是否就绪影响（直接输出 1500us）。 */
     bool has_5   = (values && count >= PWM_DIRECT_CH_COUNT);
@@ -217,7 +222,7 @@ void pwm_manager_update(const int16_t *values, uint8_t count)
             }
             tag = "auto";
         } else {
-            /* CH6：由 CH1 输入值派生（1750/1400us）。
+            /* CH6：由 CH1 输入值派生（1350/1800us）。
              * 基于 CH1 输入值而非输出值，故点击 CH1 覆盖不影响 CH6。 */
             if (!has_ch1) continue;     /* 无 CH1 数据，保持上一次输出 */
             int16_t v0 = values[0];
@@ -234,6 +239,8 @@ void pwm_manager_update(const int16_t *values, uint8_t count)
                      i + 1, tag, us, (unsigned long)duty);
         }
     }
+
+    pwm_unlock();
 }
 
 /* ====== 力度调节 ====== */
@@ -310,10 +317,10 @@ void pwm_manager_set_gesture_outputs_timed(const uint16_t *us, uint8_t count, bo
         /* 初始姿态/回归姿势：不启动定时，持续输出 */
         s_gesture_timed = false;
     } else {
-        /* 训练手势：启动定时，到期后 6 路回归 1500us */
+        /* 训练手势：启动定时，到期后 CH1~CH5 回归 1500us，CH6 保持当前值 */
         s_gesture_deadline_ms = millis() + pwm_manager_get_stroke_duration_ms();
         s_gesture_timed = true;
-        ESP_LOGI(TAG, "Gesture timed: %lu ms -> then 1500us",
+        ESP_LOGI(TAG, "Gesture timed: %lu ms -> then CH1~CH5 1500us, CH6 unchanged",
                  (unsigned long)pwm_manager_get_stroke_duration_ms());
     }
     pwm_unlock();
@@ -332,13 +339,14 @@ void pwm_manager_tick(void)
     /* 检查是否到期 */
     if ((int32_t)(millis() - s_gesture_deadline_ms) >= 0) {
         s_gesture_timed = false;
-        /* 6 路回归 1500us */
+        /* CH1~CH5 回归 1500us；CH6 不受行程影响，保持当前值 */
         uint16_t mid[PWM_CHANNEL_COUNT];
         for (uint8_t i = 0; i < PWM_CHANNEL_COUNT; i++) {
             mid[i] = PWM_OUT_MID_US;
         }
+        mid[5] = s_gesture_us[5];  /* CH6 保持当前值 */
         pwm_manager_set_gesture_outputs(mid, PWM_CHANNEL_COUNT);
-        ESP_LOGI(TAG, "Gesture timed out -> all channels 1500us");
+        ESP_LOGI(TAG, "Gesture timed out -> CH1~CH5 1500us, CH6 unchanged");
         /* 释放锁后再回调，避免回调中的 UI 操作与锁产生死锁 */
         pwm_unlock();
         /* 通知 UI 更新 */

@@ -68,7 +68,7 @@
 #define LV_USE_ANIM 1
 #define LV_USE_SYSMON 0
 #define LV_USE_THEME_DEFAULT 1
-#define LV_THEME_DEFAULT_DARK 0
+#define LV_THEME_DEFAULT_DARK 1
 
 #define LV_USE_WIDGETS 1
 #define LV_USE_OBJ 1

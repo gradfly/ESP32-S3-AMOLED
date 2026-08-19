@@ -6,7 +6,10 @@
 
 #define LCD_BIT_PER_PIXEL              16
 
+/* V1版本LCD_CS = GPIO9、IMU_INT1 = GPIO46
+   V2版本LCD_CS = GPIO46、IMU_INT1 = GPIO9*/
 #define EXAMPLE_PIN_NUM_LCD_CS            9
+//#define EXAMPLE_PIN_NUM_LCD_CS            46
 #define EXAMPLE_PIN_NUM_LCD_PCLK          10
 #define EXAMPLE_PIN_NUM_LCD_DATA0         11
 #define EXAMPLE_PIN_NUM_LCD_DATA1         12

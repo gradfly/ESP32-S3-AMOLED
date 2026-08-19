@@ -32,8 +32,10 @@ extern "C" {
 
 /* 阈值与输出脉宽（单位：微秒 us）
  * CH1~CH5：CH 值 < 阈值  -> 2000us；CH 值 > 阈值 -> 1000us；CH 值 = 阈值 -> 1500us
- * CH6    ：由 CH1 输入值派生 —— CH1 高(>阈值) -> 1750us；CH1 低(<=阈值) -> 1400us
+ * CH6    ：由 CH1 输入值派生 —— CH1 高(>阈值) -> 1350us；CH1 低(<=阈值) -> 1800us
  *          （CH6 基于 CH1 的输入值而非输出值，故点击 CH1 覆盖不影响 CH6）
+ *          CH6 不受行程调节（stroke）影响：手势定时到期后 CH1~CH5 回归 1500us，
+ *          CH6 保持当前值不重置。
  * 手动覆盖 / 全局急停 -> 输出 1500us（中位/停转）
  * 1000~2000us 为标准舵机 / ESC PWM 脉宽范围
  * 注意：PWM_VALUE_THRESHOLD 必须写成十进制 650，不能写成 0650
@@ -42,8 +44,8 @@ extern "C" {
 #define PWM_OUT_HIGH_US       2000
 #define PWM_OUT_LOW_US        1000
 #define PWM_OUT_MID_US        1500
-#define PWM_OUT_CH6_HIGH_US   1750
-#define PWM_OUT_CH6_LOW_US    1400
+#define PWM_OUT_CH6_HIGH_US   1350
+#define PWM_OUT_CH6_LOW_US    1800
 
 /* 初始化 6 路 PWM 输出（50Hz / 16bit 分辨率，舵机 PWM）。
  * 必须在 setup() 中调用一次。 */
@@ -53,7 +55,7 @@ void pwm_manager_init(void);
  * values: ble_manager_parse_frame 解析出的数组（11 路）
  * count : 数组有效元素个数
  * CH1~CH5 取 values[0..4] 直接映射（需 count >= 5）。
- * CH6 取 values[0]（CH1 输入值）派生为 1750/1400us（需 count >= 1）。
+ * CH6 取 values[0]（CH1 输入值）派生为 1350/1800us（需 count >= 1）。
  * 若某通道处于手动覆盖状态，则直接输出 1500us，不受 CH 值影响。 */
 void pwm_manager_update(const int16_t *values, uint8_t count);
 
@@ -78,7 +80,7 @@ void pwm_manager_set_gesture_mode(bool on);
 bool pwm_manager_get_gesture_mode(void);
 
 /* 设置手势模式的 6 路输出脉宽（us）并立即刷新硬件。
- * us  : 6 元素数组（CH1~CH6 脉宽，如 1750/1500/2000/1000 等）。
+ * us  : 6 元素数组（CH1~CH6 脉宽，如 1350/1500/2000/1000 等）。
  * count: 数组有效长度（应 >= 6）。
  * 仅当手势模式开启时由 pwm_manager_update() 读取生效；急停开启时仍强制 1500us。
  * 可在任意时刻调用（未开启手势模式时仅缓存，不刷新硬件）。 */
@@ -88,7 +90,7 @@ void pwm_manager_set_gesture_outputs(const uint16_t *us, uint8_t count);
  * 滑块数值 1~10，默认 10。影响 CH1~CH5 的高/低档输出脉宽：
  *   高档 = 1500 + level*50，低档 = 1500 - level*50
  *   (1:1550,1450) (2:1600,1400) ... (10:2000,1000)
- * CH6 的 1750/1400 不受力度调节影响。
+ * CH6 的 1350/1800 不受力度调节影响。
  * 初始姿态（回归姿势）和急停也不受理度调节影响。 */
 void pwm_manager_set_force_level(uint8_t level);
 uint8_t pwm_manager_get_force_level(void);
@@ -98,7 +100,7 @@ uint16_t pwm_manager_get_low_us(void);
 /* ====== 行程调节（Stroke Level）======
  * 滑块数值 1~8。仅影响训练模式手势输出的持续时间：
  *   (1:1s) (2:1.5s) (3:2s) (4:2.5s) (5:3s) (6:3.5s) (7:4s) (8:4.5s)
- * 到达时间后 6 路 PWM 回归 1500us。
+ * 到达时间后 CH1~CH5 回归 1500us；CH6 不受行程影响，保持当前值。
  * 初始姿态和急停不受行程调节影响（无定时）。 */
 void pwm_manager_set_stroke_level(uint8_t level);
 uint8_t pwm_manager_get_stroke_level(void);
@@ -106,15 +108,15 @@ uint32_t pwm_manager_get_stroke_duration_ms(void);
 
 /* 设置手势输出并按行程时间定时（仅 training 模式手势点击使用）。
  * rest_pose=true 时不启动定时（初始姿态/回归姿势不受行程影响）。
- * 到达行程时间后 6 路 PWM 自动回归 1500us，并触发 expired 回调。 */
+ * 到达行程时间后 CH1~CH5 回归 1500us，CH6 保持当前值不受影响，并触发 expired 回调。 */
 void pwm_manager_set_gesture_outputs_timed(const uint16_t *us, uint8_t count, bool rest_pose);
 
 /* 手势定时到期回调：在 pwm_manager_tick() 检测到定时到期、
- * 6 路已回归 1500us 后被调用，用于通知 UI 更新显示。 */
+ * CH1~CH5 已回归 1500us（CH6 保持当前值）后被调用，用于通知 UI 更新显示。 */
 typedef void (*pwm_gesture_expired_cb_t)(void);
 void pwm_manager_set_gesture_expired_cb(pwm_gesture_expired_cb_t cb);
 
-/* 在主循环中周期调用：检查手势定时是否到期，到期则 6 路回归 1500us。 */
+/* 在主循环中周期调用：检查手势定时是否到期，到期则 CH1~CH5 回归 1500us（CH6 保持当前值）。 */
 void pwm_manager_tick(void);
 
 #ifdef __cplusplus

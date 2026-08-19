@@ -587,7 +587,7 @@ flowchart LR
 
   <!-- ===== 4.3 UUID设置屏 ===== -->
   <h3>4.3 UUID 设置屏 — GATT 配置 (UUID Config Screen)</h3>
-  <p>连接前配置目标设备的 GATT Service / Notify / Write 特征 UUID。内置十六进制键盘（0-F），默认值为 BLE 串口模块常用配置 FFE0/FFE2/FFE1。</p>
+  <p>连接前配置目标设备的 GATT Service / Notify / Write 特征 UUID。内置十六进制键盘（0-F），默认值为 BLE 串口模块常用配置 FFF0/FFF1/FFF2。</p>
 
   <div class="phone-mockup-grid">
     <div class="phone-mockup">
@@ -599,15 +599,15 @@ flowchart LR
           <!-- Service field -->
           <text x="8" y="55" font-family="sans-serif" font-size="14" fill="#333333">Service</text>
           <rect x="66" y="40" width="198" height="32" rx="6" fill="#FFFFFF" stroke="#007AFF" stroke-width="2"/>
-          <text x="74" y="61" font-family="sans-serif" font-size="16" fill="#1D1D1F">FFE0</text>
+          <text x="74" y="61" font-family="sans-serif" font-size="16" fill="#1D1D1F">FFF0</text>
           <!-- Notify field -->
           <text x="8" y="97" font-family="sans-serif" font-size="14" fill="#333333">Notify</text>
           <rect x="66" y="82" width="198" height="32" rx="6" fill="#FFFFFF" stroke="#CCCCCC" stroke-width="2"/>
-          <text x="74" y="103" font-family="sans-serif" font-size="16" fill="#1D1D1F">FFE2</text>
+          <text x="74" y="103" font-family="sans-serif" font-size="16" fill="#1D1D1F">FFF1</text>
           <!-- Write field -->
           <text x="8" y="139" font-family="sans-serif" font-size="14" fill="#333333">Write</text>
           <rect x="66" y="124" width="198" height="32" rx="6" fill="#FFFFFF" stroke="#CCCCCC" stroke-width="2"/>
-          <text x="74" y="145" font-family="sans-serif" font-size="16" fill="#1D1D1F">FFE1</text>
+          <text x="74" y="145" font-family="sans-serif" font-size="16" fill="#1D1D1F">FFF2</text>
           <!-- Hex Keypad -->
           <rect x="0" y="174" width="264" height="188" rx="6" fill="#F2F2F7"/>
           <!-- Row 1 -->
@@ -665,8 +665,8 @@ flowchart LR
 
   <h4>UUID 配置说明</h4>
   <ul>
-    <li><strong>默认值</strong>：Service=FFE0, Notify=FFE2, Write=FFE1（BLE 串口模块通用配置）</li>
-    <li><strong>支持格式</strong>：16 位（FFE0）、32 位（0000FFE0）、128 位完整 UUID，NimBLE 自动扩展比较</li>
+    <li><strong>默认值</strong>：Service=FFF0, Notify=FFF1, Write=FFF2（BLE 串口模块通用配置）</li>
+    <li><strong>支持格式</strong>：16 位（FFF0）、32 位（0000FFF0）、128 位完整 UUID，NimBLE 自动扩展比较</li>
     <li><strong>激活指示</strong>：当前输入字段蓝色边框高亮，其余灰色边框</li>
     <li><strong>键盘</strong>：4×5 按钮矩阵，DEL 退格 / CLR 清空，各跨 2 列</li>
   </ul>
@@ -721,7 +721,7 @@ flowchart LR
           <!-- Ch9 -->
           <rect x="4" y="264" width="124" height="42" rx="6" fill="#F2F2F7"/>
           <text x="8" y="279" font-family="sans-serif" font-size="12" fill="#8E8E93">Ch9</text>
-          <text x="124" y="302" text-anchor="end" font-family="sans-serif" font-size="20" font-weight="bold" fill="#007AFF">0650</text>
+          <text x="124" y="302" text-anchor="end" font-family="sans-serif" font-size="20" font-weight="bold" fill="#007AFF">1650</text>
           <!-- Ch10 -->
           <rect x="140" y="264" width="124" height="42" rx="6" fill="#F2F2F7"/>
           <text x="144" y="279" font-family="sans-serif" font-size="12" fill="#8E8E93">Ch10</text>
@@ -747,7 +747,7 @@ flowchart LR
 
   <h4>数据格式</h4>
   <p>BLE Notify 接收的原始数据帧格式为：</p>
-  <pre><code>1800,1600,0920,0000,2000,1500,1850,0000,0650,0950,0000;</code></pre>
+  <pre><code>1800,1600,0920,0000,2000,1500,1850,0000,1650,0950,0000;</code></pre>
   <ul>
     <li><strong>帧结构</strong>：11 个数值以逗号分隔，以分号 <code>;</code> 结尾</li>
     <li><strong>帧重组</strong>：BLE 单次 Notify 最多 20 字节（MTU=23），一帧约 53 字节会被拆分，按 <code>;</code> 拼接为完整帧</li>
@@ -1002,12 +1002,12 @@ sequenceDiagram
         <tr><th>通道</th><th>引脚</th><th>输入来源</th><th>阈值判断</th><th>高输出</th><th>低输出</th><th>默认值</th></tr>
       </thead>
       <tbody>
-        <tr><td>CH1</td><td>GPIO3</td><td>values[0]</td><td>&gt; 0650 ?</td><td>2000us</td><td>1000us</td><td>1000us</td></tr>
-        <tr><td>CH2</td><td>GPIO5</td><td>values[1]</td><td>&gt; 0650 ?</td><td>2000us</td><td>1000us</td><td>1000us</td></tr>
-        <tr><td>CH3</td><td>GPIO6</td><td>values[2]</td><td>&gt; 0650 ?</td><td>2000us</td><td>1000us</td><td>1000us</td></tr>
-        <tr><td>CH4</td><td>GPIO7</td><td>values[3]</td><td>&gt; 0650 ?</td><td>2000us</td><td>1000us</td><td>1000us</td></tr>
-        <tr><td>CH5</td><td>GPIO8</td><td>values[4]</td><td>&gt; 0650 ?</td><td>2000us</td><td>1000us</td><td>1000us</td></tr>
-        <tr><td>CH6</td><td>GPIO2</td><td>values[0] (CH1输入值)</td><td>&gt; 0650 ?</td><td>1750us</td><td>1400us</td><td>1400us</td></tr>
+        <tr><td>CH1</td><td>GPIO3</td><td>values[0]</td><td>&gt; 1650 ?</td><td>2000us</td><td>1000us</td><td>1000us</td></tr>
+        <tr><td>CH2</td><td>GPIO5</td><td>values[1]</td><td>&gt; 1650 ?</td><td>2000us</td><td>1000us</td><td>1000us</td></tr>
+        <tr><td>CH3</td><td>GPIO6</td><td>values[2]</td><td>&gt; 1650 ?</td><td>2000us</td><td>1000us</td><td>1000us</td></tr>
+        <tr><td>CH4</td><td>GPIO7</td><td>values[3]</td><td>&gt; 1650 ?</td><td>2000us</td><td>1000us</td><td>1000us</td></tr>
+        <tr><td>CH5</td><td>GPIO8</td><td>values[4]</td><td>&gt; 1650 ?</td><td>2000us</td><td>1000us</td><td>1000us</td></tr>
+        <tr><td>CH6</td><td>GPIO2</td><td>values[0] (CH1输入值)</td><td>&gt; 1650 ?</td><td>1750us</td><td>1400us</td><td>1400us</td></tr>
       </tbody>
     </table>
   </div>

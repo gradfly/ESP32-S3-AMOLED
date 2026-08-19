@@ -1,0 +1,984 @@
+<!DOCTYPE html>
+<!-- saved from url=(0299)file:///D:/OneDrive/project/%E6%9C%BA%E6%A2%B0%E6%89%8B/%E7%A9%BF%E6%88%B4%E5%BA%B7%E5%A4%8D%E5%A4%96%E9%AA%A8%E9%AA%BC/%E6%98%BE%E7%A4%BA%E5%B1%8F/ble_lvgl_arduino/esp32_ble-spec/ESP32-S3%20BLE%20LVGL%20%E6%98%BE%E7%A4%BA%E5%B1%8F%E7%A8%8B%E5%BA%8F%E5%8A%9F%E8%83%BD%E8%AF%B4%E6%98%8E%E4%B9%A6.html -->
+<html lang="zh-CN"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ESP32-S3 BLE LVGL 显示屏程序功能说明书</title>
+<style>
+@font-face {
+  font-family: 'Noto Sans SC';
+  src: url('./_shared/fonts/NotoSansSC-Regular.ttf') format('truetype');
+  font-weight: 400;
+}
+@font-face {
+  font-family: 'Noto Sans SC';
+  src: url('./_shared/fonts/NotoSansSC-Bold.ttf') format('truetype');
+  font-weight: 700;
+}
+
+:root {
+  --bg: #FFFFFF;
+  --bg2: #F5F5F7;
+  --ink: #1D1D1F;
+  --muted: #86868B;
+  --rule: #D2D2D7;
+  --accent: #007AFF;
+  --accent2: #34C759;
+  --warn: #FF9500;
+  --danger: #FF3B30;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: 'Noto Sans SC', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+  line-height: 1.7;
+  font-size: 15px;
+  -webkit-font-smoothing: antialiased;
+}
+
+.container {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+/* Header */
+.report-header {
+  text-align: center;
+  padding: 60px 24px 40px;
+  border-bottom: 1px solid var(--rule);
+}
+.report-header h1 {
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin-bottom: 12px;
+}
+.report-header .subtitle {
+  font-size: 16px;
+  color: var(--muted);
+  margin-bottom: 20px;
+}
+.report-header .meta {
+  font-size: 13px;
+  color: var(--muted);
+}
+.report-header .meta span {
+  margin: 0 8px;
+}
+
+/* Section */
+section {
+  padding: 40px 0;
+  border-bottom: 1px solid var(--rule);
+}
+section:last-of-type { border-bottom: none; }
+
+h2 {
+  font-size: 22px;
+  font-weight: 700;
+  margin-bottom: 8px;
+  color: var(--ink);
+}
+h2 .num {
+  color: var(--accent);
+  font-size: 18px;
+  margin-right: 8px;
+}
+h3 {
+  font-size: 17px;
+  font-weight: 700;
+  margin-top: 28px;
+  margin-bottom: 10px;
+  color: var(--ink);
+}
+h4 {
+  font-size: 15px;
+  font-weight: 700;
+  margin-top: 20px;
+  margin-bottom: 8px;
+  color: var(--accent);
+}
+
+p { margin-bottom: 12px; }
+
+ul, ol {
+  margin: 8px 0 16px 20px;
+}
+li {
+  margin-bottom: 6px;
+  line-height: 1.6;
+}
+
+strong { font-weight: 700; }
+
+code {
+  font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: 0.88em;
+  background: var(--bg2);
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: var(--accent);
+}
+
+pre {
+  background: var(--bg2);
+  padding: 16px;
+  border-radius: 8px;
+  overflow-x: auto;
+  margin: 12px 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+pre code {
+  background: none;
+  padding: 0;
+  color: var(--ink);
+}
+
+/* Table */
+.table-wrap {
+  overflow-x: auto;
+  overflow-y: auto;
+  max-height: 600px;
+  margin: 12px 0;
+  border-radius: 8px;
+  border: 1px solid var(--rule);
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+  min-width: 500px;
+}
+th {
+  background: var(--bg2);
+  text-align: left;
+  padding: 10px 14px;
+  font-weight: 700;
+  border-bottom: 2px solid var(--rule);
+  position: sticky;
+  top: 0;
+}
+td {
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--rule);
+}
+tr:last-child td { border-bottom: none; }
+
+/* Callout */
+.callout {
+  background: var(--bg2);
+  border-left: 4px solid var(--accent);
+  padding: 14px 18px;
+  border-radius: 0 8px 8px 0;
+  margin: 16px 0;
+}
+.callout.warn {
+  border-left-color: var(--warn);
+}
+.callout.danger {
+  border-left-color: var(--danger);
+}
+
+/* Cards */
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+  margin: 16px 0;
+}
+.card {
+  background: var(--bg2);
+  border-radius: 10px;
+  padding: 18px;
+}
+.card .card-title {
+  font-weight: 700;
+  font-size: 15px;
+  margin-bottom: 8px;
+}
+.card .card-desc {
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+/* Badge */
+.badge {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 2px 10px;
+  border-radius: 12px;
+  margin-right: 6px;
+}
+.badge.blue { background: rgba(0,122,255,0.1); color: var(--accent); }
+.badge.green { background: rgba(52,199,89,0.1); color: var(--accent2); }
+.badge.orange { background: rgba(255,149,0,0.1); color: var(--warn); }
+.badge.red { background: rgba(255,59,48,0.1); color: var(--danger); }
+
+/* Phone Mockup */
+.phone-mockup-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 32px;
+  justify-content: center;
+  margin: 24px 0;
+}
+.phone-mockup {
+  width: 280px;
+  flex-shrink: 0;
+}
+.phone-mockup .phone-bezel {
+  background: #1a1a1a;
+  border-radius: 24px;
+  padding: 8px;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.12);
+}
+.phone-mockup .screen-svg {
+  width: 100%;
+  display: block;
+  border-radius: 16px;
+  overflow: hidden;
+}
+.phone-mockup .screen-label {
+  text-align: center;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
+  margin-top: 12px;
+}
+.phone-mockup .screen-desc {
+  text-align: center;
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 4px;
+  line-height: 1.5;
+}
+
+/* Diagram */
+.diagram {
+  margin: 20px 0;
+  text-align: center;
+  overflow-x: auto;
+}
+.diagram figcaption {
+  font-size: 13px;
+  color: var(--muted);
+  margin-top: 8px;
+}
+
+/* Mermaid */
+.mermaid {
+  display: flex;
+  justify-content: center;
+}
+
+/* Footer */
+footer {
+  padding: 40px 24px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--muted);
+  border-top: 1px solid var(--rule);
+}
+
+@media (max-width: 768px) {
+  .container { padding: 0 16px; }
+  .phone-mockup-grid { gap: 20px; }
+  .report-header h1 { font-size: 22px; }
+}
+</style>
+</head>
+<body>
+
+<!-- ============ HEADER ============ -->
+<header class="report-header">
+  <h1>ESP32-S3 BLE LVGL 显示屏程序功能说明书</h1>
+  <p class="subtitle">穿戴康复外骨骼机械手 — 智能显示屏控制系统</p>
+  <p class="meta">
+    <span>硬件平台: ESP32-S3</span>|
+    <span>UI框架: LVGL v8</span>|
+    <span>通信: BLE 5.0 (NimBLE)</span>|
+    <span>版本: 1.0</span>|
+    <span>日期: 2026-08-05</span>
+  </p>
+</header>
+
+<div class="container">
+
+<!-- ============ 1. 项目概述 ============ -->
+<section>
+  <h2><span class="num">01</span>项目概述</h2>
+  <p>本项目是一套基于 <strong>ESP32-S3</strong> 微控制器的嵌入式显示控制系统，专为<strong>穿戴康复外骨骼机械手</strong>设计。系统通过 BLE 无线接收肌电传感器/控制器发出的 11 路通道数据，经阈值判断后驱动 6 路舵机 PWM 输出，实现手指的屈伸运动控制。同时提供触摸屏 GUI 界面，支持设备扫描连接、实时数据监控、PWM 输出调节、以及离线手势自主训练等功能。</p>
+
+  <div class="card-grid">
+    <div class="card">
+      <div class="card-title"><span class="badge blue">核心功能</span></div>
+      <div class="card-desc">BLE 设备扫描与连接、11 通道实时数据接收与显示、6 路 PWM 舵机驱动、急停与单通道暂停控制</div>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="badge green">训练模式</span></div>
+      <div class="card-desc">12 种预设手势图案（数字 1-8/10、OK、点赞、爱心），离线自主训练无需 BLE 连接</div>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="badge orange">显示规格</span></div>
+      <div class="card-desc">SH8601 AMOLED 屏 280×456 像素、FT3168 电容触摸、SPI + I2C 接口</div>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="badge red">安全机制</span></div>
+      <div class="card-desc">全局急停按钮（所有通道强制 1500us 中位）、单通道手动覆盖、优先级分层控制</div>
+    </div>
+  </div>
+
+  <h3>系统定位</h3>
+  <p>本显示屏作为外骨骼机械手的<strong>人机交互终端</strong>，承担三大角色：</p>
+  <ul>
+    <li><strong>通信枢纽</strong> — 通过 BLE 与上位机/传感器节点建立 GATT 连接，接收实时肌电信号</li>
+    <li><strong>控制核心</strong> — 将传感器数据按阈值映射为舵机 PWM 脉宽，驱动 6 路手指运动</li>
+    <li><strong>交互界面</strong> — 提供触摸屏 GUI，实时显示数据、PWM 状态，支持手动干预与训练</li>
+  </ul>
+</section>
+
+<!-- ============ 2. 硬件架构 ============ -->
+<section>
+  <h2><span class="num">02</span>硬件架构</h2>
+
+  <h3>主控芯片</h3>
+  <p>采用 <strong>ESP32-S3</strong> 双核 Xtensa LX7 处理器，集成 2.4GHz Wi-Fi + BLE 5.0 射频，支持 PSRAM。本项目中关闭 Wi-Fi 以避免与 BLE 共享射频造成干扰，专注 BLE 通信。</p>
+
+  <h3>外围器件引脚分配</h3>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>功能模块</th><th>器件</th><th>接口</th><th>GPIO 引脚</th><th>备注</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>AMOLED 显示屏</td><td>SH8601</td><td>SPI (4-wire)</td><td>CS=9, PCLK=10, D0=11, D1=12, D2=13, D3=14</td><td>280×456, 16-bit RGB565</td></tr>
+        <tr><td>显示屏复位</td><td>—</td><td>GPIO</td><td>RST=21</td><td>低电平复位</td></tr>
+        <tr><td>电容触摸</td><td>FT3168</td><td>I2C</td><td>SDA=47, SCL=48</td><td>地址 0x38</td></tr>
+        <tr><td>PWM CH1</td><td>舵机/ESC</td><td>LEDC</td><td>GPIO3</td><td>50Hz / 16bit</td></tr>
+        <tr><td>PWM CH2</td><td>舵机/ESC</td><td>LEDC</td><td>GPIO5</td><td>50Hz / 16bit</td></tr>
+        <tr><td>PWM CH3</td><td>舵机/ESC</td><td>LEDC</td><td>GPIO6</td><td>50Hz / 16bit</td></tr>
+        <tr><td>PWM CH4</td><td>舵机/ESC</td><td>LEDC</td><td>GPIO7</td><td>50Hz / 16bit</td></tr>
+        <tr><td>PWM CH5</td><td>舵机/ESC</td><td>LEDC</td><td>GPIO8</td><td>50Hz / 16bit</td></tr>
+        <tr><td>PWM CH6</td><td>舵机/ESC</td><td>LEDC</td><td>GPIO2</td><td>由 CH1 派生</td></tr>
+        <tr><td>PSRAM</td><td>—</td><td>—</td><td>GPIO26~32</td><td>已占用，不可复用</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="callout">
+    <p><strong>设计说明：</strong>PWM 选用 GPIO 2/3/5/6/7/8 通用 IO 引脚，避开 Flash 引脚（GPIO26~32 PSRAM 占用）和 LCD/Touch 引脚。GPIO3 为 strapping 引脚，上电后可正常作 PWM 输出，仅需保证上电瞬间无强下拉。</p>
+  </div>
+</section>
+
+<!-- ============ 3. 软件架构 ============ -->
+<section>
+  <h2><span class="num">03</span>软件架构</h2>
+
+  <p>固件基于 <strong>Arduino-ESP32 3.x</strong> 框架开发，使用 FreeRTOS 多任务调度。LVGL v8 负责图形界面渲染，NimBLE 协议栈负责 BLE 通信。</p>
+
+  <figure class="diagram">
+    <pre class="mermaid" data-processed="true"><svg id="mermaid-1787034973479" width="100%" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" class="flowchart" style="max-width: 2492.39990234375px;" viewBox="0 0 2492.39990234375 1308.199951171875" role="graphics-document document" aria-roledescription="flowchart-v2"><style>#mermaid-1787034973479{font-family:"trebuchet ms",verdana,arial,sans-serif;font-size:16px;fill:#000000;}#mermaid-1787034973479 .error-icon{fill:#552222;}#mermaid-1787034973479 .error-text{fill:#552222;stroke:#552222;}#mermaid-1787034973479 .edge-thickness-normal{stroke-width:1px;}#mermaid-1787034973479 .edge-thickness-thick{stroke-width:3.5px;}#mermaid-1787034973479 .edge-pattern-solid{stroke-dasharray:0;}#mermaid-1787034973479 .edge-thickness-invisible{stroke-width:0;fill:none;}#mermaid-1787034973479 .edge-pattern-dashed{stroke-dasharray:3;}#mermaid-1787034973479 .edge-pattern-dotted{stroke-dasharray:2;}#mermaid-1787034973479 .marker{fill:#666;stroke:#666;}#mermaid-1787034973479 .marker.cross{stroke:#666;}#mermaid-1787034973479 svg{font-family:"trebuchet ms",verdana,arial,sans-serif;font-size:16px;}#mermaid-1787034973479 p{margin:0;}#mermaid-1787034973479 .label{font-family:"trebuchet ms",verdana,arial,sans-serif;color:#000000;}#mermaid-1787034973479 .cluster-label text{fill:#333;}#mermaid-1787034973479 .cluster-label span{color:#333;}#mermaid-1787034973479 .cluster-label span p{background-color:transparent;}#mermaid-1787034973479 .label text,#mermaid-1787034973479 span{fill:#000000;color:#000000;}#mermaid-1787034973479 .node rect,#mermaid-1787034973479 .node circle,#mermaid-1787034973479 .node ellipse,#mermaid-1787034973479 .node polygon,#mermaid-1787034973479 .node path{fill:#eee;stroke:#999;stroke-width:1px;}#mermaid-1787034973479 .rough-node .label text,#mermaid-1787034973479 .node .label text,#mermaid-1787034973479 .image-shape .label,#mermaid-1787034973479 .icon-shape .label{text-anchor:middle;}#mermaid-1787034973479 .node .katex path{fill:#000;stroke:#000;stroke-width:1px;}#mermaid-1787034973479 .rough-node .label,#mermaid-1787034973479 .node .label,#mermaid-1787034973479 .image-shape .label,#mermaid-1787034973479 .icon-shape .label{text-align:center;}#mermaid-1787034973479 .node.clickable{cursor:pointer;}#mermaid-1787034973479 .root .anchor path{fill:#666!important;stroke-width:0;stroke:#666;}#mermaid-1787034973479 .arrowheadPath{fill:#333333;}#mermaid-1787034973479 .edgePath .path{stroke:#666;stroke-width:2.0px;}#mermaid-1787034973479 .flowchart-link{stroke:#666;fill:none;}#mermaid-1787034973479 .edgeLabel{background-color:white;text-align:center;}#mermaid-1787034973479 .edgeLabel p{background-color:white;}#mermaid-1787034973479 .edgeLabel rect{opacity:0.5;background-color:white;fill:white;}#mermaid-1787034973479 .labelBkg{background-color:rgba(255, 255, 255, 0.5);}#mermaid-1787034973479 .cluster rect{fill:hsl(0, 0%, 98.9215686275%);stroke:#707070;stroke-width:1px;}#mermaid-1787034973479 .cluster text{fill:#333;}#mermaid-1787034973479 .cluster span{color:#333;}#mermaid-1787034973479 div.mermaidTooltip{position:absolute;text-align:center;max-width:200px;padding:2px;font-family:"trebuchet ms",verdana,arial,sans-serif;font-size:12px;background:hsl(-160, 0%, 93.3333333333%);border:1px solid #707070;border-radius:2px;pointer-events:none;z-index:100;}#mermaid-1787034973479 .flowchartTitleText{text-anchor:middle;font-size:18px;fill:#000000;}#mermaid-1787034973479 rect.text{fill:none;stroke-width:0;}#mermaid-1787034973479 .icon-shape,#mermaid-1787034973479 .image-shape{background-color:white;text-align:center;}#mermaid-1787034973479 .icon-shape p,#mermaid-1787034973479 .image-shape p{background-color:white;padding:2px;}#mermaid-1787034973479 .icon-shape rect,#mermaid-1787034973479 .image-shape rect{opacity:0.5;background-color:white;fill:white;}#mermaid-1787034973479 :root{--mermaid-font-family:"trebuchet ms",verdana,arial,sans-serif;}</style><g><marker id="mermaid-1787034973479_flowchart-v2-pointEnd" class="marker flowchart-v2" viewBox="0 0 10 10" refX="5" refY="5" markerUnits="userSpaceOnUse" markerWidth="8" markerHeight="8" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></path></marker><marker id="mermaid-1787034973479_flowchart-v2-pointStart" class="marker flowchart-v2" viewBox="0 0 10 10" refX="4.5" refY="5" markerUnits="userSpaceOnUse" markerWidth="8" markerHeight="8" orient="auto"><path d="M 0 5 L 10 10 L 10 0 z" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></path></marker><marker id="mermaid-1787034973479_flowchart-v2-circleEnd" class="marker flowchart-v2" viewBox="0 0 10 10" refX="11" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><circle cx="5" cy="5" r="5" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></circle></marker><marker id="mermaid-1787034973479_flowchart-v2-circleStart" class="marker flowchart-v2" viewBox="0 0 10 10" refX="-1" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><circle cx="5" cy="5" r="5" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></circle></marker><marker id="mermaid-1787034973479_flowchart-v2-crossEnd" class="marker cross flowchart-v2" viewBox="0 0 11 11" refX="12" refY="5.2" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><path d="M 1,1 l 9,9 M 10,1 l -9,9" class="arrowMarkerPath" style="stroke-width: 2; stroke-dasharray: 1, 0;"></path></marker><marker id="mermaid-1787034973479_flowchart-v2-crossStart" class="marker cross flowchart-v2" viewBox="0 0 11 11" refX="-1" refY="5.2" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><path d="M 1,1 l 9,9 M 10,1 l -9,9" class="arrowMarkerPath" style="stroke-width: 2; stroke-dasharray: 1, 0;"></path></marker><g class="root"><g class="clusters"><g class="cluster " id="PWM" data-look="classic"><rect style="fill:#FFEBEE !important;stroke:#FF3B30 !important" x="492.8000068664551" y="1172.2000122070312" width="1964.4000091552734" height="128"></rect><g class="cluster-label " transform="translate(1378.600009918213, 1172.2000122070312)"><foreignobject width="192.8000030517578" height="24"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="nodeLabel "><p>PWM 模块 (pwm_manager)</p></span></div></foreignobject></g></g><g class="cluster " id="UI" data-look="classic"><rect style="fill:#FFF3E0 !important;stroke:#FF9500 !important" x="989.4000129699707" y="994.2000122070312" width="1495" height="128"></rect><g class="cluster-label " transform="translate(1674.1000137329102, 994.2000122070312)"><foreignobject width="125.5999984741211" height="24"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="nodeLabel "><p>UI 模块 (ui_main)</p></span></div></foreignobject></g></g><g class="cluster " id="BLE" data-look="classic"><rect style="fill:#E8F0FE !important;stroke:#34C759 !important" x="8" y="8" width="836.4000091552734" height="408"></rect><g class="cluster-label " transform="translate(340.2000045776367, 8)"><foreignobject width="172" height="24"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="nodeLabel "><p>BLE 模块 (ble_manager)</p></span></div></foreignobject></g></g><g class="cluster " id="Main" data-look="classic"><rect style="fill:#F5F5F7 !important;stroke:#007AFF !important" x="441.6000061035156" y="466" width="527.8000068664551" height="656.2000122070312"></rect><g class="cluster-label " transform="translate(612.7000064849854, 466)"><foreignobject width="185.60000610351562" height="24"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="nodeLabel "><p>主任务 loop() / 50ms 周期</p></span></div></foreignobject></g></g></g><g class="edgePaths"><path d="M715.4,111L715.4,115.167C715.4,119.333,715.4,127.667,715.4,135.333C715.4,143,715.4,150,715.4,153.5L715.4,157" id="L_B3_B4_0" class=" edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="" marker-end="url(#mermaid-1787034973479_flowchart-v2-pointEnd)"></path><path d="M715.4,239L715.4,243.167C715.4,247.333,715.4,255.667,715.4,265.333C715.4,275,715.4,286,715.4,291.5L715.4,297" id="L_B4_B5_1" class=" edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="" marker-end="url(#mermaid-1787034973479_flowchart-v2-pointEnd)"></path><path d="M715.4,379L715.4,385.167C715.4,391.333,715.4,403.667,715.4,414C715.4,424.333,715.4,432.667,715.4,441C715.4,449.333,715.4,457.667,715.4,465.333C715.4,473,715.4,480,715.4,483.5L715.4,487" id="L_B5_L1_2" class=" edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="" marker-end="url(#mermaid-1787034973479_flowchart-v2-pointEnd)"></path><path d="M715.4,569L715.4,573.167C715.4,577.333,715.4,585.667,715.47,593.417C715.541,601.167,715.681,608.334,715.751,611.917L715.822,615.501" id="L_L1_L2_3" class=" edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="" marker-end="url(#mermaid-1787034973479_flowchart-v2-pointEnd)"></path><path d="M674.502,751.302L662.451,764.285C650.401,777.268,626.301,803.234,614.25,821.717C602.2,840.2,602.2,851.2,602.2,856.7L602.2,862.2" id="L_L2_L3_4" class=" edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="" marker-end="url(#mermaid-1787034973479_flowchart-v2-pointEnd)"></path><path d="M602.2,944.2L602.2,948.367C602.2,952.533,602.2,960.867,602.2,969.2C602.2,977.533,602.2,985.867,602.2,993.533C602.2,1001.2,602.2,1008.2,602.2,1011.7L602.2,1015.2" id="L_L3_L4_5" class=" edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="" marker-end="url(#mermaid-1787034973479_flowchart-v2-pointEnd)"></path><path d="M757.298,751.302L769.182,764.285C781.066,777.268,804.833,803.234,816.716,821.717C828.6,840.2,828.6,851.2,828.6,856.7L828.6,862.2" id="L_L2_L5_6" class=" edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="" marker-end="url(#mermaid-1787034973479_flowchart-v2-pointEnd)"></path><path d="M602.2,1097.2L602.2,1101.367C602.2,1105.533,602.2,1113.867,602.2,1122.2C602.2,1130.533,602.2,1138.867,602.2,1147.2C602.2,1155.533,602.2,1163.867,602.2,1171.533C602.2,1179.2,602.2,1186.2,602.2,1189.7L602.2,1193.2" id="L_L4_P1_7" class=" edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="" marker-end="url(#mermaid-1787034973479_flowchart-v2-pointEnd)"></path><path d="M1896.4,1072.004L1832.883,1080.37C1769.367,1088.736,1642.333,1105.468,1578.817,1118.001C1515.3,1130.533,1515.3,1138.867,1515.3,1147.2C1515.3,1155.533,1515.3,1163.867,1515.3,1171.533C1515.3,1179.2,1515.3,1186.2,1515.3,1189.7L1515.3,1193.2" id="L_U5_P2_8" class=" edge-thickness-normal edge-pattern-dotted edge-thickness-normal edge-pattern-solid flowchart-link" style="" marker-end="url(#mermaid-1787034973479_flowchart-v2-pointEnd)"></path><path d="M2045.497,1085.2L2055.614,1091.367C2065.731,1097.533,2085.966,1109.867,2096.083,1120.2C2106.2,1130.533,2106.2,1138.867,2106.2,1147.2C2106.2,1155.533,2106.2,1163.867,2106.2,1171.533C2106.2,1179.2,2106.2,1186.2,2106.2,1189.7L2106.2,1193.2" id="L_U5_P3_9" class=" edge-thickness-normal edge-pattern-dotted edge-thickness-normal edge-pattern-solid flowchart-link" style="" marker-end="url(#mermaid-1787034973479_flowchart-v2-pointEnd)"></path><path d="M2344.2,1085.2L2344.2,1091.367C2344.2,1097.533,2344.2,1109.867,2344.2,1120.2C2344.2,1130.533,2344.2,1138.867,2344.2,1147.2C2344.2,1155.533,2344.2,1163.867,2344.2,1171.533C2344.2,1179.2,2344.2,1186.2,2344.2,1189.7L2344.2,1193.2" id="L_U6_P4_10" class=" edge-thickness-normal edge-pattern-dotted edge-thickness-normal edge-pattern-solid flowchart-link" style="" marker-end="url(#mermaid-1787034973479_flowchart-v2-pointEnd)"></path></g><g class="edgeLabels"><g class="edgeLabel"><g class="label" transform="translate(0, 0)"><foreignobject width="0" height="0"><div xmlns="http://www.w3.org/1999/xhtml" class="labelBkg" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="edgeLabel "></span></div></foreignobject></g></g><g class="edgeLabel"><g class="label" transform="translate(0, 0)"><foreignobject width="0" height="0"><div xmlns="http://www.w3.org/1999/xhtml" class="labelBkg" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="edgeLabel "></span></div></foreignobject></g></g><g class="edgeLabel"><g class="label" transform="translate(0, 0)"><foreignobject width="0" height="0"><div xmlns="http://www.w3.org/1999/xhtml" class="labelBkg" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="edgeLabel "></span></div></foreignobject></g></g><g class="edgeLabel"><g class="label" transform="translate(0, 0)"><foreignobject width="0" height="0"><div xmlns="http://www.w3.org/1999/xhtml" class="labelBkg" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="edgeLabel "></span></div></foreignobject></g></g><g class="edgeLabel" transform="translate(602.200008392334, 829.2000122070312)"><g class="label" transform="translate(-8, -12)"><foreignobject width="16" height="24"><div xmlns="http://www.w3.org/1999/xhtml" class="labelBkg" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="edgeLabel "><p>是</p></span></div></foreignobject></g></g><g class="edgeLabel"><g class="label" transform="translate(0, 0)"><foreignobject width="0" height="0"><div xmlns="http://www.w3.org/1999/xhtml" class="labelBkg" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="edgeLabel "></span></div></foreignobject></g></g><g class="edgeLabel" transform="translate(828.6000099182129, 829.2000122070312)"><g class="label" transform="translate(-8, -12)"><foreignobject width="16" height="24"><div xmlns="http://www.w3.org/1999/xhtml" class="labelBkg" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="edgeLabel "><p>否</p></span></div></foreignobject></g></g><g class="edgeLabel"><g class="label" transform="translate(0, 0)"><foreignobject width="0" height="0"><div xmlns="http://www.w3.org/1999/xhtml" class="labelBkg" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="edgeLabel "></span></div></foreignobject></g></g><g class="edgeLabel"><g class="label" transform="translate(0, 0)"><foreignobject width="0" height="0"><div xmlns="http://www.w3.org/1999/xhtml" class="labelBkg" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="edgeLabel "></span></div></foreignobject></g></g><g class="edgeLabel"><g class="label" transform="translate(0, 0)"><foreignobject width="0" height="0"><div xmlns="http://www.w3.org/1999/xhtml" class="labelBkg" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="edgeLabel "></span></div></foreignobject></g></g><g class="edgeLabel"><g class="label" transform="translate(0, 0)"><foreignobject width="0" height="0"><div xmlns="http://www.w3.org/1999/xhtml" class="labelBkg" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="edgeLabel "></span></div></foreignobject></g></g></g><g class="nodes"><g class="node default  " id="flowchart-L1-0" transform="translate(715.4000091552734, 530)"><rect class="basic label-container" style="" x="-133.5999984741211" y="-39" width="267.1999969482422" height="78"></rect><g class="label" style="" transform="translate(-103.5999984741211, -24)"><rect></rect><foreignobject width="207.1999969482422" height="48"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table; white-space: break-spaces; line-height: 1.5; max-width: 200px; text-align: center; width: 200px;"><span class="nodeLabel "><p>BLE 数据处理<br>ble_manager_process_data()</p></span></div></foreignobject></g></g><g class="node default  " id="flowchart-L2-1" transform="translate(715.4000091552734, 705.6000061035156)"><polygon points="86.60000228881836,0 173.20000457763672,-86.60000228881836 86.60000228881836,-173.20000457763672 0,-86.60000228881836" class="label-container" transform="translate(-86.60000228881836,86.60000228881836)"></polygon><g class="label" style="" transform="translate(-47.60000228881836, -24)"><rect></rect><foreignobject width="95.20000457763672" height="48"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="nodeLabel "><p>数据脏标志<br>s_data_dirty?</p></span></div></foreignobject></g></g><g class="node default  " id="flowchart-L3-2" transform="translate(602.200008392334, 905.2000122070312)"><rect class="basic label-container" style="" x="-98.4000015258789" y="-39" width="196.8000030517578" height="78"></rect><g class="label" style="" transform="translate(-68.4000015258789, -24)"><rect></rect><foreignobject width="136.8000030517578" height="48"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="nodeLabel "><p>UI 刷新<br>数据网格 + PWM 屏</p></span></div></foreignobject></g></g><g class="node default  " id="flowchart-L4-3" transform="translate(602.200008392334, 1058.2000122070312)"><rect class="basic label-container" style="" x="-117.5999984741211" y="-39" width="235.1999969482422" height="78"></rect><g class="label" style="" transform="translate(-87.5999984741211, -24)"><rect></rect><foreignobject width="175.1999969482422" height="48"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="nodeLabel "><p>PWM 硬件输出<br>pwm_manager_update()</p></span></div></foreignobject></g></g><g class="node default  " id="flowchart-L5-4" transform="translate(828.6000099182129, 905.2000122070312)"><rect class="basic label-container" style="" x="-78" y="-39" width="156" height="78"></rect><g class="label" style="" transform="translate(-48, -24)"><rect></rect><foreignobject width="96" height="48"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="nodeLabel "><p>BLE 状态监控<br>扫描结果更新</p></span></div></foreignobject></g></g><g class="node default  " id="flowchart-B1-5" transform="translate(173, 340)"><rect class="basic label-container" style="" x="-130" y="-51" width="260" height="102"></rect><g class="label" style="" transform="translate(-100, -36)"><rect></rect><foreignobject width="200" height="72"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table; white-space: break-spaces; line-height: 1.5; max-width: 200px; text-align: center; width: 200px;"><span class="nodeLabel "><p>NimBLE 扫描<br>解析广播包 Manufacturer Data</p></span></div></foreignobject></g></g><g class="node default  " id="flowchart-B2-6" transform="translate(467.8000030517578, 340)"><rect class="basic label-container" style="" x="-114.80000305175781" y="-39" width="229.60000610351562" height="78"></rect><g class="label" style="" transform="translate(-84.80000305175781, -24)"><rect></rect><foreignobject width="169.60000610351562" height="48"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="nodeLabel "><p>GATT 连接<br>多策略重试 + UUID 匹配</p></span></div></foreignobject></g></g><g class="node default  " id="flowchart-B3-7" transform="translate(715.4000091552734, 72)"><rect class="basic label-container" style="" x="-83.60000228881836" y="-39" width="167.20000457763672" height="78"></rect><g class="label" style="" transform="translate(-53.60000228881836, -24)"><rect></rect><foreignobject width="107.20000457763672" height="48"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="nodeLabel "><p>Notify 接收<br>ISR 到消息队列</p></span></div></foreignobject></g></g><g class="node default  " id="flowchart-B4-8" transform="translate(715.4000091552734, 200)"><rect class="basic label-container" style="" x="-94" y="-39" width="188" height="78"></rect><g class="label" style="" transform="translate(-64, -24)"><rect></rect><foreignobject width="128" height="48"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="nodeLabel "><p>帧重组<br>按分号拼接完整帧</p></span></div></foreignobject></g></g><g class="node default  " id="flowchart-B5-9" transform="translate(715.4000091552734, 340)"><rect class="basic label-container" style="" x="-82.79999923706055" y="-39" width="165.5999984741211" height="78"></rect><g class="label" style="" transform="translate(-52.79999923706055, -24)"><rect></rect><foreignobject width="105.5999984741211" height="48"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="nodeLabel "><p>帧解析<br>提取 11 路数值</p></span></div></foreignobject></g></g><g class="node default  " id="flowchart-U1-10" transform="translate(1111.2000160217285, 1058.2000122070312)"><rect class="basic label-container" style="" x="-86.79999923706055" y="-27" width="173.5999984741211" height="54"></rect><g class="label" style="" transform="translate(-56.79999923706055, -12)"><rect></rect><foreignobject width="113.5999984741211" height="24"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="nodeLabel "><p>主屏 / 模式选择</p></span></div></foreignobject></g></g><g class="node default  " id="flowchart-U2-11" transform="translate(1318.0000190734863, 1058.2000122070312)"><rect class="basic label-container" style="" x="-70" y="-27" width="140" height="54"></rect><g class="label" style="" transform="translate(-40, -12)"><rect></rect><foreignobject width="80" height="24"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="nodeLabel "><p>设备列表屏</p></span></div></foreignobject></g></g><g class="node default  " id="flowchart-U3-12" transform="translate(1512.0000190734863, 1058.2000122070312)"><rect class="basic label-container" style="" x="-74" y="-27" width="148" height="54"></rect><g class="label" style="" transform="translate(-44, -12)"><rect></rect><foreignobject width="88" height="24"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="nodeLabel "><p>UUID 设置屏</p></span></div></foreignobject></g></g><g class="node default  " id="flowchart-U4-13" transform="translate(1741.2000160217285, 1058.2000122070312)"><rect class="basic label-container" style="" x="-105.20000457763672" y="-27" width="210.40000915527344" height="54"></rect><g class="label" style="" transform="translate(-75.20000457763672, -12)"><rect></rect><foreignobject width="150.40000915527344" height="24"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="nodeLabel "><p>数据屏 / 11 通道网格</p></span></div></foreignobject></g></g><g class="node default  " id="flowchart-U5-14" transform="translate(2001.2000160217285, 1058.2000122070312)"><rect class="basic label-container" style="" x="-104.80000305175781" y="-27" width="209.60000610351562" height="54"></rect><g class="label" style="" transform="translate(-74.80000305175781, -12)"><rect></rect><foreignobject width="149.60000610351562" height="24"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="nodeLabel "><p>PWM 屏 / 6 通道状态</p></span></div></foreignobject></g></g><g class="node default  " id="flowchart-U6-15" transform="translate(2344.2000160217285, 1058.2000122070312)"><rect class="basic label-container" style="" x="-105.20000457763672" y="-27" width="210.40000915527344" height="54"></rect><g class="label" style="" transform="translate(-75.20000457763672, -12)"><rect></rect><foreignobject width="150.40000915527344" height="24"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="nodeLabel "><p>手势屏 / 12 手势训练</p></span></div></foreignobject></g></g><g class="node default  " id="flowchart-P1-16" transform="translate(602.200008392334, 1236.2000122070312)"><rect class="basic label-container" style="" x="-74.4000015258789" y="-39" width="148.8000030517578" height="78"></rect><g class="label" style="" transform="translate(-44.400001525878906, -24)"><rect></rect><foreignobject width="88.80000305175781" height="48"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="nodeLabel "><p>自动映射<br>CH 值到脉宽</p></span></div></foreignobject></g></g><g class="node default  " id="flowchart-P2-17" transform="translate(1515.3000144958496, 1236.2000122070312)"><rect class="basic label-container" style="" x="-72" y="-39" width="144" height="78"></rect><g class="label" style="" transform="translate(-42, -24)"><rect></rect><foreignobject width="84" height="48"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="nodeLabel "><p>单通道覆盖<br>1500us 中位</p></span></div></foreignobject></g></g><g class="node default  " id="flowchart-P3-18" transform="translate(2106.2000160217285, 1236.2000122070312)"><rect class="basic label-container" style="" x="-88" y="-39" width="176" height="78"></rect><g class="label" style="" transform="translate(-58, -24)"><rect></rect><foreignobject width="116" height="48"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="nodeLabel "><p>全局急停<br>所有通道 1500us</p></span></div></foreignobject></g></g><g class="node default  " id="flowchart-P4-19" transform="translate(2344.2000160217285, 1236.2000122070312)"><rect class="basic label-container" style="" x="-78" y="-39" width="156" height="78"></rect><g class="label" style="" transform="translate(-48, -24)"><rect></rect><foreignobject width="96" height="48"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="nodeLabel "><p>手势模式<br>直接指定脉宽</p></span></div></foreignobject></g></g></g></g></g></svg></pre>
+    <figcaption>图 1：系统软件架构与数据流</figcaption>
+  </figure>
+
+  <h3>模块文件清单</h3>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>文件</th><th>功能</th><th>关键函数</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>ble_lvgl_arduino.ino</code></td><td>主程序入口，初始化与主循环</td><td><code>setup()</code>, <code>loop()</code></td></tr>
+        <tr><td><code>ui_main.c / .h</code></td><td>LVGL 界面创建与刷新（6 屏）</td><td><code>ui_init()</code>, <code>ui_update_data_values()</code></td></tr>
+        <tr><td><code>ble_manager.cpp / .h</code></td><td>BLE 扫描、连接、数据接收</td><td><code>ble_manager_init()</code>, <code>ble_manager_connect()</code></td></tr>
+        <tr><td><code>pwm_manager.cpp / .h</code></td><td>6 路 PWM 舵机输出管理</td><td><code>pwm_manager_update()</code>, <code>pwm_manager_set_estop()</code></td></tr>
+        <tr><td><code>lcd_bsp.c / .h</code></td><td>LCD 与 LVGL 底层初始化</td><td><code>lcd_lvgl_Init()</code>, <code>get_lvgl_mutex()</code></td></tr>
+        <tr><td><code>FT3168.c / .h</code></td><td>FT3168 触摸驱动</td><td><code>Touch_Init()</code>, <code>getTouch()</code></td></tr>
+        <tr><td><code>esp_lcd_sh8601.c / .h</code></td><td>SH8601 AMOLED 面板驱动</td><td>初始化序列寄存器配置</td></tr>
+        <tr><td><code>gesture_images.c / .h</code></td><td>12 种手势图片数据（36×36）</td><td>自动生成，勿手动编辑</td></tr>
+        <tr><td><code>lv_font_cjk_14.c</code></td><td>中文字体（14px msyh）</td><td>由 lv_font_conv 生成</td></tr>
+        <tr><td><code>lcd_config.h</code></td><td>LCD/Touch 引脚与分辨率配置</td><td>宏定义</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>初始化流程</h3>
+  <p>系统启动时按以下步骤依次初始化各模块：</p>
+  <ol>
+    <li><strong>STEP 1 — 触摸驱动</strong>：初始化 FT3168 I2C 触摸控制器</li>
+    <li><strong>STEP 2 — LCD + LVGL</strong>：初始化 SH8601 AMOLED 面板、挂载 LVGL 显示驱动与触摸驱动、启动 LVGL 定时器任务</li>
+    <li><strong>STEP 3 — BLE 管理器</strong>：关闭 Wi-Fi 避免 RF 干扰、初始化 NimBLE 设备、创建扫描器与数据接收队列、注册回调</li>
+    <li><strong>STEP 4 — UI 界面</strong>：创建 6 个屏幕对象、绑定边缘滑动事件、加载主屏</li>
+    <li><strong>STEP 5 — PWM 输出</strong>：初始化 6 路 LEDC 通道（50Hz / 16bit），默认输出低脉宽避免舵机抖动</li>
+  </ol>
+</section>
+
+<!-- ============ 4. 界面说明 ============ -->
+<section>
+  <h2><span class="num">04</span>软件界面说明</h2>
+  <p>系统共有 <strong>6 个屏幕界面</strong>，通过触摸点击按钮或屏幕边缘滑动切换。屏幕间导航关系如下：</p>
+
+  <figure class="diagram">
+    <pre class="mermaid" data-processed="true"><svg id="mermaid-1787034973737" width="100%" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" class="flowchart" style="max-width: 1348.800048828125px;" viewBox="0 0 1348.800048828125 314" role="graphics-document document" aria-roledescription="flowchart-v2"><style>#mermaid-1787034973737{font-family:"trebuchet ms",verdana,arial,sans-serif;font-size:16px;fill:#000000;}#mermaid-1787034973737 .error-icon{fill:#552222;}#mermaid-1787034973737 .error-text{fill:#552222;stroke:#552222;}#mermaid-1787034973737 .edge-thickness-normal{stroke-width:1px;}#mermaid-1787034973737 .edge-thickness-thick{stroke-width:3.5px;}#mermaid-1787034973737 .edge-pattern-solid{stroke-dasharray:0;}#mermaid-1787034973737 .edge-thickness-invisible{stroke-width:0;fill:none;}#mermaid-1787034973737 .edge-pattern-dashed{stroke-dasharray:3;}#mermaid-1787034973737 .edge-pattern-dotted{stroke-dasharray:2;}#mermaid-1787034973737 .marker{fill:#666;stroke:#666;}#mermaid-1787034973737 .marker.cross{stroke:#666;}#mermaid-1787034973737 svg{font-family:"trebuchet ms",verdana,arial,sans-serif;font-size:16px;}#mermaid-1787034973737 p{margin:0;}#mermaid-1787034973737 .label{font-family:"trebuchet ms",verdana,arial,sans-serif;color:#000000;}#mermaid-1787034973737 .cluster-label text{fill:#333;}#mermaid-1787034973737 .cluster-label span{color:#333;}#mermaid-1787034973737 .cluster-label span p{background-color:transparent;}#mermaid-1787034973737 .label text,#mermaid-1787034973737 span{fill:#000000;color:#000000;}#mermaid-1787034973737 .node rect,#mermaid-1787034973737 .node circle,#mermaid-1787034973737 .node ellipse,#mermaid-1787034973737 .node polygon,#mermaid-1787034973737 .node path{fill:#eee;stroke:#999;stroke-width:1px;}#mermaid-1787034973737 .rough-node .label text,#mermaid-1787034973737 .node .label text,#mermaid-1787034973737 .image-shape .label,#mermaid-1787034973737 .icon-shape .label{text-anchor:middle;}#mermaid-1787034973737 .node .katex path{fill:#000;stroke:#000;stroke-width:1px;}#mermaid-1787034973737 .rough-node .label,#mermaid-1787034973737 .node .label,#mermaid-1787034973737 .image-shape .label,#mermaid-1787034973737 .icon-shape .label{text-align:center;}#mermaid-1787034973737 .node.clickable{cursor:pointer;}#mermaid-1787034973737 .root .anchor path{fill:#666!important;stroke-width:0;stroke:#666;}#mermaid-1787034973737 .arrowheadPath{fill:#333333;}#mermaid-1787034973737 .edgePath .path{stroke:#666;stroke-width:2.0px;}#mermaid-1787034973737 .flowchart-link{stroke:#666;fill:none;}#mermaid-1787034973737 .edgeLabel{background-color:white;text-align:center;}#mermaid-1787034973737 .edgeLabel p{background-color:white;}#mermaid-1787034973737 .edgeLabel rect{opacity:0.5;background-color:white;fill:white;}#mermaid-1787034973737 .labelBkg{background-color:rgba(255, 255, 255, 0.5);}#mermaid-1787034973737 .cluster rect{fill:hsl(0, 0%, 98.9215686275%);stroke:#707070;stroke-width:1px;}#mermaid-1787034973737 .cluster text{fill:#333;}#mermaid-1787034973737 .cluster span{color:#333;}#mermaid-1787034973737 div.mermaidTooltip{position:absolute;text-align:center;max-width:200px;padding:2px;font-family:"trebuchet ms",verdana,arial,sans-serif;font-size:12px;background:hsl(-160, 0%, 93.3333333333%);border:1px solid #707070;border-radius:2px;pointer-events:none;z-index:100;}#mermaid-1787034973737 .flowchartTitleText{text-anchor:middle;font-size:18px;fill:#000000;}#mermaid-1787034973737 rect.text{fill:none;stroke-width:0;}#mermaid-1787034973737 .icon-shape,#mermaid-1787034973737 .image-shape{background-color:white;text-align:center;}#mermaid-1787034973737 .icon-shape p,#mermaid-1787034973737 .image-shape p{background-color:white;padding:2px;}#mermaid-1787034973737 .icon-shape rect,#mermaid-1787034973737 .image-shape rect{opacity:0.5;background-color:white;fill:white;}#mermaid-1787034973737 :root{--mermaid-font-family:"trebuchet ms",verdana,arial,sans-serif;}</style><g><marker id="mermaid-1787034973737_flowchart-v2-pointEnd" class="marker flowchart-v2" viewBox="0 0 10 10" refX="5" refY="5" markerUnits="userSpaceOnUse" markerWidth="8" markerHeight="8" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></path></marker><marker id="mermaid-1787034973737_flowchart-v2-pointStart" class="marker flowchart-v2" viewBox="0 0 10 10" refX="4.5" refY="5" markerUnits="userSpaceOnUse" markerWidth="8" markerHeight="8" orient="auto"><path d="M 0 5 L 10 10 L 10 0 z" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></path></marker><marker id="mermaid-1787034973737_flowchart-v2-circleEnd" class="marker flowchart-v2" viewBox="0 0 10 10" refX="11" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><circle cx="5" cy="5" r="5" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></circle></marker><marker id="mermaid-1787034973737_flowchart-v2-circleStart" class="marker flowchart-v2" viewBox="0 0 10 10" refX="-1" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><circle cx="5" cy="5" r="5" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></circle></marker><marker id="mermaid-1787034973737_flowchart-v2-crossEnd" class="marker cross flowchart-v2" viewBox="0 0 11 11" refX="12" refY="5.2" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><path d="M 1,1 l 9,9 M 10,1 l -9,9" class="arrowMarkerPath" style="stroke-width: 2; stroke-dasharray: 1, 0;"></path></marker><marker id="mermaid-1787034973737_flowchart-v2-crossStart" class="marker cross flowchart-v2" viewBox="0 0 11 11" refX="-1" refY="5.2" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><path d="M 1,1 l 9,9 M 10,1 l -9,9" class="arrowMarkerPath" style="stroke-width: 2; stroke-dasharray: 1, 0;"></path></marker><g class="root"><g class="clusters"></g><g class="edgePaths"><path d="M121.676,136L140.497,117.5C159.317,99,196.959,62,228.22,45.342C259.481,28.684,284.362,32.367,296.803,34.209L309.243,36.051" id="L_M_DL_0" class=" edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="" marker-end="url(#mermaid-1787034973737_flowchart-v2-pointEnd)"></path><path d="M156,154.633L169.1,151.028C182.2,147.422,208.4,140.211,235.892,140.673C263.384,141.135,292.167,149.271,306.559,153.338L320.951,157.406" id="L_M_GS_1" class=" edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="" marker-end="url(#mermaid-1787034973737_flowchart-v2-pointEnd)"></path><path d="M453.2,37.689L469.1,35.574C485,33.459,516.8,29.23,547.939,29.094C579.078,28.958,609.556,32.916,624.794,34.895L640.033,36.874" id="L_DL_UC_2" class=" edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="" marker-end="url(#mermaid-1787034973737_flowchart-v2-pointEnd)"></path><path d="M313.2,66.785L300.1,70.487C287,74.19,260.8,81.595,234.381,92.803C207.962,104.012,181.325,119.024,168.006,126.53L154.687,134.036" id="L_DL_M_3" class=" edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="" marker-end="url(#mermaid-1787034973737_flowchart-v2-pointEnd)"></path><path d="M792,47L804.167,47C816.333,47,840.667,47,870.642,73.778C900.616,100.556,936.233,154.113,954.041,180.891L971.849,207.669" id="L_UC_DS_4" class=" edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="" marker-end="url(#mermaid-1787034973737_flowchart-v2-pointEnd)"></path><path d="M644,81.947L628.1,89.456C612.2,96.965,580.4,111.982,549.2,112.091C518,112.2,487.401,97.399,472.101,89.999L456.801,82.599" id="L_UC_DL_5" class=" edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="" marker-end="url(#mermaid-1787034973737_flowchart-v2-pointEnd)"></path><path d="M1062,239.26L1072.833,237.383C1083.667,235.507,1105.333,231.753,1126.341,231.482C1147.35,231.212,1167.699,234.423,1177.874,236.029L1188.049,237.635" id="L_DS_PW_6" class=" edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="" marker-end="url(#mermaid-1787034973737_flowchart-v2-pointEnd)"></path><path d="M1192,261.742L1181.167,263.451C1170.333,265.161,1148.667,268.581,1127.657,268.527C1106.647,268.474,1086.294,264.949,1076.118,263.186L1065.941,261.423" id="L_PW_DS_7" class=" edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="" marker-end="url(#mermaid-1787034973737_flowchart-v2-pointEnd)"></path><path d="M938,250L925.833,250C913.667,250,889.333,250,852.667,250C816,250,767,250,714.267,250C661.533,250,605.067,250,549.267,250C493.467,250,438.333,250,386,250C333.667,250,284.133,250,246.865,243.856C209.597,237.711,184.593,225.423,172.092,219.278L159.59,213.134" id="L_DS_M_8" class=" edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="" marker-end="url(#mermaid-1787034973737_flowchart-v2-pointEnd)"></path><path d="M938,270.207L925.833,274.173C913.667,278.138,889.333,286.069,852.667,290.035C816,294,767,294,714.267,294C661.533,294,605.067,294,549.267,294C493.467,294,438.333,294,386,294C333.667,294,284.133,294,242.794,281.077C201.455,268.153,168.311,242.307,151.738,229.383L135.166,216.46" id="L_DS_M_9" class=" edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="" marker-end="url(#mermaid-1787034973737_flowchart-v2-pointEnd)"></path><path d="M324.8,183.646L309.767,185.872C294.733,188.097,264.667,192.549,237.193,192.981C209.72,193.413,184.839,189.826,172.399,188.033L159.959,186.239" id="L_GS_M_10" class=" edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="" marker-end="url(#mermaid-1787034973737_flowchart-v2-pointEnd)"></path></g><g class="edgeLabels"><g class="edgeLabel" transform="translate(234.60000228881836, 25)"><g class="label" transform="translate(-37.20000076293945, -12)"><foreignobject width="74.4000015258789" height="24"><div xmlns="http://www.w3.org/1999/xhtml" class="labelBkg" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="edgeLabel "><p>SCAN 按钮</p></span></div></foreignobject></g></g><g class="edgeLabel" transform="translate(234.60000228881836, 133)"><g class="label" transform="translate(-53.60000228881836, -12)"><foreignobject width="107.20000457763672" height="24"><div xmlns="http://www.w3.org/1999/xhtml" class="labelBkg" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="edgeLabel "><p>TRAINING 按钮</p></span></div></foreignobject></g></g><g class="edgeLabel" transform="translate(548.6000061035156, 25)"><g class="label" transform="translate(-70.4000015258789, -12)"><foreignobject width="140.8000030517578" height="24"><div xmlns="http://www.w3.org/1999/xhtml" class="labelBkg" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="edgeLabel "><p>选中设备 + Connect</p></span></div></foreignobject></g></g><g class="edgeLabel" transform="translate(234.60000228881836, 89)"><g class="label" transform="translate(-35.20000076293945, -12)"><foreignobject width="70.4000015258789" height="24"><div xmlns="http://www.w3.org/1999/xhtml" class="labelBkg" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="edgeLabel "><p>Back 按钮</p></span></div></foreignobject></g></g><g class="edgeLabel" transform="translate(865.0000076293945, 47)"><g class="label" transform="translate(-48, -12)"><foreignobject width="96" height="24"><div xmlns="http://www.w3.org/1999/xhtml" class="labelBkg" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="edgeLabel "><p>Connect 按钮</p></span></div></foreignobject></g></g><g class="edgeLabel" transform="translate(548.6000061035156, 127)"><g class="label" transform="translate(-42.79999923706055, -12)"><foreignobject width="85.5999984741211" height="24"><div xmlns="http://www.w3.org/1999/xhtml" class="labelBkg" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="edgeLabel "><p>Cancel 按钮</p></span></div></foreignobject></g></g><g class="edgeLabel" transform="translate(1127.0000076293945, 228)"><g class="label" transform="translate(-40, -12)"><foreignobject width="80" height="24"><div xmlns="http://www.w3.org/1999/xhtml" class="labelBkg" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="edgeLabel "><p>右边缘左滑</p></span></div></foreignobject></g></g><g class="edgeLabel" transform="translate(1127.0000076293945, 272)"><g class="label" transform="translate(-40, -12)"><foreignobject width="80" height="24"><div xmlns="http://www.w3.org/1999/xhtml" class="labelBkg" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="edgeLabel "><p>左边缘右滑</p></span></div></foreignobject></g></g><g class="edgeLabel" transform="translate(548.6000061035156, 250)"><g class="label" transform="translate(-40, -12)"><foreignobject width="80" height="24"><div xmlns="http://www.w3.org/1999/xhtml" class="labelBkg" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="edgeLabel "><p>左边缘右滑</p></span></div></foreignobject></g></g><g class="edgeLabel" transform="translate(548.6000061035156, 294)"><g class="label" transform="translate(-57.60000228881836, -12)"><foreignobject width="115.20000457763672" height="24"><div xmlns="http://www.w3.org/1999/xhtml" class="labelBkg" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="edgeLabel "><p>Disconnect 按钮</p></span></div></foreignobject></g></g><g class="edgeLabel" transform="translate(234.60000228881836, 197)"><g class="label" transform="translate(-40, -12)"><foreignobject width="80" height="24"><div xmlns="http://www.w3.org/1999/xhtml" class="labelBkg" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="edgeLabel "><p>右边缘左滑</p></span></div></foreignobject></g></g></g><g class="nodes"><g class="node default  " id="flowchart-M-43" transform="translate(82, 175)"><rect class="basic label-container" style="fill:#E3F2FD !important;stroke:#007AFF !important;stroke-width:2px !important" x="-74" y="-39" width="148" height="78"></rect><g class="label" style="" transform="translate(-44, -24)"><rect></rect><foreignobject width="88" height="48"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="nodeLabel "><p>主屏<br>Select Mode</p></span></div></foreignobject></g></g><g class="node default  " id="flowchart-DL-44" transform="translate(383.2000045776367, 47)"><rect class="basic label-container" style="fill:#F5F5F7 !important;stroke:#86868B !important" x="-70" y="-39" width="140" height="78"></rect><g class="label" style="" transform="translate(-40, -24)"><rect></rect><foreignobject width="80" height="48"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="nodeLabel "><p>设备列表屏<br>Devices</p></span></div></foreignobject></g></g><g class="node default  " id="flowchart-GS-46" transform="translate(383.2000045776367, 175)"><rect class="basic label-container" style="fill:#F3E5F5 !important;stroke:#9C27B0 !important" x="-58.39999961853027" y="-39" width="116.79999923706055" height="78"></rect><g class="label" style="" transform="translate(-28.399999618530273, -24)"><rect></rect><foreignobject width="56.79999923706055" height="48"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="nodeLabel "><p>手势屏<br>Gesture</p></span></div></foreignobject></g></g><g class="node default  " id="flowchart-UC-48" transform="translate(718.0000076293945, 47)"><rect class="basic label-container" style="fill:#FFF3E0 !important;stroke:#FF9500 !important" x="-74" y="-39" width="148" height="78"></rect><g class="label" style="" transform="translate(-44, -24)"><rect></rect><foreignobject width="88" height="48"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="nodeLabel "><p>UUID 设置屏<br>UUID Config</p></span></div></foreignobject></g></g><g class="node default  " id="flowchart-DS-52" transform="translate(1000.0000076293945, 250)"><rect class="basic label-container" style="fill:#E8F5E9 !important;stroke:#34C759 !important" x="-62" y="-39" width="124" height="78"></rect><g class="label" style="" transform="translate(-32, -24)"><rect></rect><foreignobject width="64" height="48"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="nodeLabel "><p>数据屏<br>BLE Data</p></span></div></foreignobject></g></g><g class="node default  " id="flowchart-PW-56" transform="translate(1266.4000091552734, 250)"><rect class="basic label-container" style="fill:#FFEBEE !important;stroke:#FF3B30 !important" x="-74.4000015258789" y="-39" width="148.8000030517578" height="78"></rect><g class="label" style="" transform="translate(-44.400001525878906, -24)"><rect></rect><foreignobject width="88.80000305175781" height="48"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="nodeLabel "><p>PWM 屏<br>PWM Output</p></span></div></foreignobject></g></g></g></g></g></svg></pre>
+    <figcaption>图 2：屏幕导航关系图</figcaption>
+  </figure>
+
+  <h3>边缘滑动切换机制</h3>
+  <div class="callout">
+    <p><strong>滑动规则：</strong>主屏 ↔ 数据屏 ↔ PWM 屏 构成线性顺序。左边缘 80px 内右滑 → 上一屏；右边缘 80px 内左滑 → 下一屏。手势屏不在此线性顺序中，由主屏"TRAINING"按钮进入，右边缘左滑返回主屏。滑动动画 300ms，防抖间隔 400ms。</p>
+  </div>
+
+  <!-- ===== 4.1 主屏 ===== -->
+  <h3>4.1 主屏 — 模式选择 (Main Screen)</h3>
+  <p>系统启动后的默认界面，提供两种工作模式入口。点击"SCAN"进入 BLE 设备扫描流程，点击"TRAINING"进入离线手势训练模式。</p>
+
+  <div class="phone-mockup-grid">
+    <div class="phone-mockup">
+      <div class="phone-bezel">
+        <svg class="screen-svg" viewBox="0 0 280 456" xmlns="http://www.w3.org/2000/svg">
+          <rect width="280" height="456" fill="#FFFFFF"></rect>
+          <!-- Title -->
+          <text x="140" y="75" text-anchor="middle" font-family="sans-serif" font-size="24" font-weight="bold" fill="#007AFF">Select Mode</text>
+          <!-- SCAN Button -->
+          <rect x="40" y="160" width="200" height="50" rx="8" fill="#007AFF"></rect>
+          <text x="140" y="192" text-anchor="middle" font-family="sans-serif" font-size="22" font-weight="bold" fill="#FFFFFF">SCAN</text>
+          <!-- TRAINING Button -->
+          <rect x="40" y="230" width="200" height="50" rx="8" fill="#007AFF"></rect>
+          <text x="140" y="262" text-anchor="middle" font-family="sans-serif" font-size="22" font-weight="bold" fill="#FFFFFF">TRAINING</text>
+          <!-- Status -->
+          <text x="140" y="320" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#333333">Ready</text>
+          <!-- Swipe hints -->
+          <text x="140" y="420" text-anchor="middle" font-family="sans-serif" font-size="10" fill="#CCCCCC">Swipe edges to navigate</text>
+        </svg>
+      </div>
+      <div class="screen-label">主屏 — Select Mode</div>
+      <div class="screen-desc">两个蓝色按钮：SCAN（BLE 扫描）/ TRAINING（手势训练）</div>
+    </div>
+  </div>
+
+  <h4>界面元素</h4>
+  <ul>
+    <li><strong>SCAN 按钮</strong>：关闭手势模式 → 切换到设备列表屏 → 启动 BLE 扫描（1 秒）</li>
+    <li><strong>TRAINING 按钮</strong>：开启手势模式（PWM 直接控制，忽略 BLE 输入） → 切换到手势屏</li>
+    <li><strong>状态标签</strong>：底部显示当前 BLE 状态（Ready / Scanning... / Disconnected 等）</li>
+  </ul>
+
+  <!-- ===== 4.2 设备列表屏 ===== -->
+  <h3>4.2 设备列表屏 — 设备扫描 (Device List Screen)</h3>
+  <p>显示 BLE 扫描到的设备列表，按 RSSI 信号强度从高到低排序。支持自定义设备标识（UUID+SN）去重。</p>
+
+  <div class="phone-mockup-grid">
+    <div class="phone-mockup">
+      <div class="phone-bezel">
+        <svg class="screen-svg" viewBox="0 0 280 456" xmlns="http://www.w3.org/2000/svg">
+          <rect width="280" height="456" fill="#FFFFFF"></rect>
+          <!-- Back button -->
+          <rect x="10" y="15" width="60" height="40" rx="8" fill="#007AFF"></rect>
+          <text x="40" y="40" text-anchor="middle" font-family="sans-serif" font-size="16" fill="#FFFFFF">Back</text>
+          <!-- Title -->
+          <text x="140" y="45" text-anchor="middle" font-family="sans-serif" font-size="24" font-weight="bold" fill="#007AFF">Devices</text>
+          <!-- Device list -->
+          <rect x="10" y="70" width="260" height="300" rx="6" fill="none" stroke="#E5E5EA" stroke-width="1"></rect>
+          <!-- Device 1 -->
+          <rect x="14" y="74" width="252" height="48" rx="6" fill="#007AFF"></rect>
+          <text x="28" y="95" font-family="sans-serif" font-size="12" fill="#FFFFFF">MyDevice</text>
+          <text x="28" y="112" font-family="sans-serif" font-size="10" fill="#FFFFFF">UUID:12345678 SN:00000001 RSSI:-42</text>
+          <!-- Device 2 -->
+          <rect x="14" y="126" width="252" height="48" rx="6" fill="#F2F2F7"></rect>
+          <text x="28" y="147" font-family="sans-serif" font-size="12" fill="#333333">ESP32-S3-Display</text>
+          <text x="28" y="164" font-family="sans-serif" font-size="10" fill="#86868B">B3:97:1A:91:38:F9 RSSI:-58</text>
+          <!-- Device 3 -->
+          <rect x="14" y="178" width="252" height="48" rx="6" fill="#F2F2F7"></rect>
+          <text x="28" y="199" font-family="sans-serif" font-size="12" fill="#333333">(no name)</text>
+          <text x="28" y="216" font-family="sans-serif" font-size="10" fill="#86868B">A1:B2:C3:D4:E5:F6 RSSI:-72</text>
+          <!-- Connect button -->
+          <rect x="40" y="390" width="200" height="50" rx="8" fill="#007AFF"></rect>
+          <text x="140" y="422" text-anchor="middle" font-family="sans-serif" font-size="16" fill="#FFFFFF">Connect</text>
+        </svg>
+      </div>
+      <div class="screen-label">设备列表屏 — Devices</div>
+      <div class="screen-desc">按 RSSI 排序，选中项蓝底白字，底部 Connect 按钮</div>
+    </div>
+  </div>
+
+  <h4>扫描特性</h4>
+  <ul>
+    <li><strong>扫描时长</strong>：1 秒主动扫描（setActiveScan=true），100% 占空比</li>
+    <li><strong>去重策略</strong>：带自定义厂商 ID（0xFF00）的设备按 UUID+SN 去重；否则按 MAC 去重</li>
+    <li><strong>排序</strong>：扫描结束后按 RSSI 降序排列（信号强 → 弱）</li>
+    <li><strong>显示信息</strong>：设备名 + UUID/SN（或 MAC）+ RSSI</li>
+    <li><strong>最大数量</strong>：20 台设备（<code>BLE_SCAN_RESULT_MAX</code>）</li>
+  </ul>
+
+  <!-- ===== 4.3 UUID设置屏 ===== -->
+  <h3>4.3 UUID 设置屏 — GATT 配置 (UUID Config Screen)</h3>
+  <p>连接前配置目标设备的 GATT Service / Notify / Write 特征 UUID。内置十六进制键盘（0-F），默认值为 BLE 串口模块常用配置 FFE0/FFE2/FFE1。</p>
+
+  <div class="phone-mockup-grid">
+    <div class="phone-mockup">
+      <div class="phone-bezel">
+        <svg class="screen-svg" viewBox="0 0 280 456" xmlns="http://www.w3.org/2000/svg">
+          <rect width="280" height="456" fill="#FFFFFF"></rect>
+          <!-- Title -->
+          <text x="140" y="25" text-anchor="middle" font-family="sans-serif" font-size="18" font-weight="bold" fill="#007AFF">UUID Config</text>
+          <!-- Service field -->
+          <text x="8" y="55" font-family="sans-serif" font-size="14" fill="#333333">Service</text>
+          <rect x="66" y="40" width="198" height="32" rx="6" fill="#FFFFFF" stroke="#007AFF" stroke-width="2"></rect>
+          <text x="74" y="61" font-family="sans-serif" font-size="16" fill="#1D1D1F">FFE0</text>
+          <!-- Notify field -->
+          <text x="8" y="97" font-family="sans-serif" font-size="14" fill="#333333">Notify</text>
+          <rect x="66" y="82" width="198" height="32" rx="6" fill="#FFFFFF" stroke="#CCCCCC" stroke-width="2"></rect>
+          <text x="74" y="103" font-family="sans-serif" font-size="16" fill="#1D1D1F">FFE2</text>
+          <!-- Write field -->
+          <text x="8" y="139" font-family="sans-serif" font-size="14" fill="#333333">Write</text>
+          <rect x="66" y="124" width="198" height="32" rx="6" fill="#FFFFFF" stroke="#CCCCCC" stroke-width="2"></rect>
+          <text x="74" y="145" font-family="sans-serif" font-size="16" fill="#1D1D1F">FFE1</text>
+          <!-- Hex Keypad -->
+          <rect x="0" y="174" width="264" height="188" rx="6" fill="#F2F2F7"></rect>
+          <!-- Row 1 -->
+          <rect x="4" y="178" width="60" height="32" rx="4" fill="#FFFFFF" stroke="#E5E5EA"></rect>
+          <text x="34" y="199" text-anchor="middle" font-family="sans-serif" font-size="16" fill="#333">1</text>
+          <rect x="68" y="178" width="60" height="32" rx="4" fill="#FFFFFF" stroke="#E5E5EA"></rect>
+          <text x="98" y="199" text-anchor="middle" font-family="sans-serif" font-size="16" fill="#333">2</text>
+          <rect x="132" y="178" width="60" height="32" rx="4" fill="#FFFFFF" stroke="#E5E5EA"></rect>
+          <text x="162" y="199" text-anchor="middle" font-family="sans-serif" font-size="16" fill="#333">3</text>
+          <rect x="196" y="178" width="60" height="32" rx="4" fill="#FFFFFF" stroke="#E5E5EA"></rect>
+          <text x="226" y="199" text-anchor="middle" font-family="sans-serif" font-size="16" fill="#333">4</text>
+          <!-- Row 2 -->
+          <rect x="4" y="214" width="60" height="32" rx="4" fill="#FFFFFF" stroke="#E5E5EA"></rect>
+          <text x="34" y="235" text-anchor="middle" font-family="sans-serif" font-size="16" fill="#333">5</text>
+          <rect x="68" y="214" width="60" height="32" rx="4" fill="#FFFFFF" stroke="#E5E5EA"></rect>
+          <text x="98" y="235" text-anchor="middle" font-family="sans-serif" font-size="16" fill="#333">6</text>
+          <rect x="132" y="214" width="60" height="32" rx="4" fill="#FFFFFF" stroke="#E5E5EA"></rect>
+          <text x="162" y="235" text-anchor="middle" font-family="sans-serif" font-size="16" fill="#333">7</text>
+          <rect x="196" y="214" width="60" height="32" rx="4" fill="#FFFFFF" stroke="#E5E5EA"></rect>
+          <text x="226" y="235" text-anchor="middle" font-family="sans-serif" font-size="16" fill="#333">8</text>
+          <!-- Row 3 -->
+          <rect x="4" y="250" width="60" height="32" rx="4" fill="#FFFFFF" stroke="#E5E5EA"></rect>
+          <text x="34" y="271" text-anchor="middle" font-family="sans-serif" font-size="16" fill="#333">9</text>
+          <rect x="68" y="250" width="60" height="32" rx="4" fill="#FFFFFF" stroke="#E5E5EA"></rect>
+          <text x="98" y="271" text-anchor="middle" font-family="sans-serif" font-size="16" fill="#333">0</text>
+          <rect x="132" y="250" width="60" height="32" rx="4" fill="#FFFFFF" stroke="#E5E5EA"></rect>
+          <text x="162" y="271" text-anchor="middle" font-family="sans-serif" font-size="16" fill="#333">A</text>
+          <rect x="196" y="250" width="60" height="32" rx="4" fill="#FFFFFF" stroke="#E5E5EA"></rect>
+          <text x="226" y="271" text-anchor="middle" font-family="sans-serif" font-size="16" fill="#333">B</text>
+          <!-- Row 4 -->
+          <rect x="4" y="286" width="60" height="32" rx="4" fill="#FFFFFF" stroke="#E5E5EA"></rect>
+          <text x="34" y="307" text-anchor="middle" font-family="sans-serif" font-size="16" fill="#333">C</text>
+          <rect x="68" y="286" width="60" height="32" rx="4" fill="#FFFFFF" stroke="#E5E5EA"></rect>
+          <text x="98" y="307" text-anchor="middle" font-family="sans-serif" font-size="16" fill="#333">D</text>
+          <rect x="132" y="286" width="60" height="32" rx="4" fill="#FFFFFF" stroke="#E5E5EA"></rect>
+          <text x="162" y="307" text-anchor="middle" font-family="sans-serif" font-size="16" fill="#333">E</text>
+          <rect x="196" y="286" width="60" height="32" rx="4" fill="#FFFFFF" stroke="#E5E5EA"></rect>
+          <text x="226" y="307" text-anchor="middle" font-family="sans-serif" font-size="16" fill="#333">F</text>
+          <!-- Row 5: DEL / CLR -->
+          <rect x="4" y="322" width="124" height="32" rx="4" fill="#FFFFFF" stroke="#E5E5EA"></rect>
+          <text x="66" y="343" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#FF3B30">DEL</text>
+          <rect x="132" y="322" width="124" height="32" rx="4" fill="#FFFFFF" stroke="#E5E5EA"></rect>
+          <text x="194" y="343" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#FF3B30">CLR</text>
+          <!-- Cancel / Connect -->
+          <rect x="0" y="372" width="128" height="44" rx="8" fill="#8E8E93"></rect>
+          <text x="64" y="400" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#FFFFFF">Cancel</text>
+          <rect x="136" y="372" width="128" height="44" rx="8" fill="#007AFF"></rect>
+          <text x="200" y="400" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#FFFFFF">Connect</text>
+        </svg>
+      </div>
+      <div class="screen-label">UUID 设置屏 — UUID Config</div>
+      <div class="screen-desc">3 个 UUID 输入框 + 十六进制键盘 + Cancel/Connect</div>
+    </div>
+  </div>
+
+  <h4>UUID 配置说明</h4>
+  <ul>
+    <li><strong>默认值</strong>：Service=FFE0, Notify=FFE2, Write=FFE1（BLE 串口模块通用配置）</li>
+    <li><strong>支持格式</strong>：16 位（FFE0）、32 位（0000FFE0）、128 位完整 UUID，NimBLE 自动扩展比较</li>
+    <li><strong>激活指示</strong>：当前输入字段蓝色边框高亮，其余灰色边框</li>
+    <li><strong>键盘</strong>：4×5 按钮矩阵，DEL 退格 / CLR 清空，各跨 2 列</li>
+  </ul>
+
+  <!-- ===== 4.4 数据屏 ===== -->
+  <h3>4.4 数据屏 — 实时数据监控 (BLE Data Screen)</h3>
+  <p>BLE 连接成功后自动切换到此屏，实时显示 11 通道传感器数据和最新原始帧。以 ~20Hz 频率刷新（50ms 主循环周期）。</p>
+
+  <div class="phone-mockup-grid">
+    <div class="phone-mockup">
+      <div class="phone-bezel">
+        <svg class="screen-svg" viewBox="0 0 280 456" xmlns="http://www.w3.org/2000/svg">
+          <rect width="280" height="456" fill="#FFFFFF"></rect>
+          <!-- Title -->
+          <text x="140" y="25" text-anchor="middle" font-family="sans-serif" font-size="24" font-weight="bold" fill="#007AFF">BLE Data</text>
+          <!-- Status -->
+          <text x="140" y="62" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#34C759">Connected: MyDevice</text>
+          <!-- Grid container -->
+          <rect x="4" y="76" width="272" height="282" fill="none" stroke="none"></rect>
+          <!-- Ch1 -->
+          <rect x="4" y="80" width="124" height="42" rx="6" fill="#F2F2F7"></rect>
+          <text x="8" y="95" font-family="sans-serif" font-size="12" fill="#8E8E93">Ch1</text>
+          <text x="124" y="118" text-anchor="end" font-family="sans-serif" font-size="20" font-weight="bold" fill="#007AFF">1800</text>
+          <!-- Ch2 -->
+          <rect x="140" y="80" width="124" height="42" rx="6" fill="#F2F2F7"></rect>
+          <text x="144" y="95" font-family="sans-serif" font-size="12" fill="#8E8E93">Ch2</text>
+          <text x="260" y="118" text-anchor="end" font-family="sans-serif" font-size="20" font-weight="bold" fill="#007AFF">1600</text>
+          <!-- Ch3 -->
+          <rect x="4" y="126" width="124" height="42" rx="6" fill="#F2F2F7"></rect>
+          <text x="8" y="141" font-family="sans-serif" font-size="12" fill="#8E8E93">Ch3</text>
+          <text x="124" y="164" text-anchor="end" font-family="sans-serif" font-size="20" font-weight="bold" fill="#007AFF">0920</text>
+          <!-- Ch4 -->
+          <rect x="140" y="126" width="124" height="42" rx="6" fill="#F2F2F7"></rect>
+          <text x="144" y="141" font-family="sans-serif" font-size="12" fill="#8E8E93">Ch4</text>
+          <text x="260" y="164" text-anchor="end" font-family="sans-serif" font-size="20" font-weight="bold" fill="#007AFF">0000</text>
+          <!-- Ch5 -->
+          <rect x="4" y="172" width="124" height="42" rx="6" fill="#F2F2F7"></rect>
+          <text x="8" y="187" font-family="sans-serif" font-size="12" fill="#8E8E93">Ch5</text>
+          <text x="124" y="210" text-anchor="end" font-family="sans-serif" font-size="20" font-weight="bold" fill="#007AFF">2000</text>
+          <!-- Ch6 -->
+          <rect x="140" y="172" width="124" height="42" rx="6" fill="#F2F2F7"></rect>
+          <text x="144" y="187" font-family="sans-serif" font-size="12" fill="#8E8E93">Ch6</text>
+          <text x="260" y="210" text-anchor="end" font-family="sans-serif" font-size="20" font-weight="bold" fill="#007AFF">1500</text>
+          <!-- Ch7 -->
+          <rect x="4" y="218" width="124" height="42" rx="6" fill="#F2F2F7"></rect>
+          <text x="8" y="233" font-family="sans-serif" font-size="12" fill="#8E8E93">Ch7</text>
+          <text x="124" y="256" text-anchor="end" font-family="sans-serif" font-size="20" font-weight="bold" fill="#007AFF">1850</text>
+          <!-- Ch8 -->
+          <rect x="140" y="218" width="124" height="42" rx="6" fill="#F2F2F7"></rect>
+          <text x="144" y="233" font-family="sans-serif" font-size="12" fill="#8E8E93">Ch8</text>
+          <text x="260" y="256" text-anchor="end" font-family="sans-serif" font-size="20" font-weight="bold" fill="#007AFF">0000</text>
+          <!-- Ch9 -->
+          <rect x="4" y="264" width="124" height="42" rx="6" fill="#F2F2F7"></rect>
+          <text x="8" y="279" font-family="sans-serif" font-size="12" fill="#8E8E93">Ch9</text>
+          <text x="124" y="302" text-anchor="end" font-family="sans-serif" font-size="20" font-weight="bold" fill="#007AFF">0650</text>
+          <!-- Ch10 -->
+          <rect x="140" y="264" width="124" height="42" rx="6" fill="#F2F2F7"></rect>
+          <text x="144" y="279" font-family="sans-serif" font-size="12" fill="#8E8E93">Ch10</text>
+          <text x="260" y="302" text-anchor="end" font-family="sans-serif" font-size="20" font-weight="bold" fill="#007AFF">0950</text>
+          <!-- Ch11 -->
+          <rect x="4" y="310" width="124" height="42" rx="6" fill="#F2F2F7"></rect>
+          <text x="8" y="325" font-family="sans-serif" font-size="12" fill="#8E8E93">Ch11</text>
+          <text x="124" y="348" text-anchor="end" font-family="sans-serif" font-size="20" font-weight="bold" fill="#007AFF">0000</text>
+          <!-- Raw data -->
+          <text x="140" y="378" text-anchor="middle" font-family="monospace" font-size="11" fill="#86868B">Raw: 1800,1600,0920,0000,2000,1500,...</text>
+          <!-- Disconnect -->
+          <rect x="10" y="404" width="120" height="42" rx="8" fill="#007AFF"></rect>
+          <text x="70" y="431" text-anchor="middle" font-family="sans-serif" font-size="18" fill="#FFFFFF">Disconnect</text>
+          <!-- Clear -->
+          <rect x="150" y="404" width="120" height="42" rx="8" fill="#8E8E93"></rect>
+          <text x="210" y="431" text-anchor="middle" font-family="sans-serif" font-size="18" fill="#FFFFFF">Clear</text>
+        </svg>
+      </div>
+      <div class="screen-label">数据屏 — BLE Data</div>
+      <div class="screen-desc">11 通道数值网格（2 列）+ 原始帧 + Disconnect/Clear</div>
+    </div>
+  </div>
+
+  <h4>数据格式</h4>
+  <p>BLE Notify 接收的原始数据帧格式为：</p>
+  <pre><code>1800,1600,0920,0000,2000,1500,1850,0000,0650,0950,0000;</code></pre>
+  <ul>
+    <li><strong>帧结构</strong>：11 个数值以逗号分隔，以分号 <code>;</code> 结尾</li>
+    <li><strong>帧重组</strong>：BLE 单次 Notify 最多 20 字节（MTU=23），一帧约 53 字节会被拆分，按 <code>;</code> 拼接为完整帧</li>
+    <li><strong>解析</strong>：<code>ble_manager_parse_frame()</code> 容错解析，跳过非数字前导字符，支持负号与前导零</li>
+    <li><strong>显示</strong>：4 位零填充格式（如 0920），蓝色字体，2 列 6 行网格布局</li>
+  </ul>
+
+  <!-- ===== 4.5 PWM输出屏 ===== -->
+  <h3>4.5 PWM 输出屏 — 舵机控制 (PWM Output Screen)</h3>
+  <p>显示 6 路 PWM 通道的输入值与输出脉宽，支持单通道暂停（覆盖）和全局急停。从数据屏右边缘左滑进入。</p>
+
+  <div class="phone-mockup-grid">
+    <div class="phone-mockup">
+      <div class="phone-bezel">
+        <svg class="screen-svg" viewBox="0 0 280 456" xmlns="http://www.w3.org/2000/svg">
+          <rect width="280" height="456" fill="#FFFFFF"></rect>
+          <!-- Title -->
+          <text x="140" y="25" text-anchor="middle" font-family="sans-serif" font-size="24" font-weight="bold" fill="#007AFF">PWM Output</text>
+          <!-- Status -->
+          <text x="140" y="62" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#34C759">Connected: MyDevice</text>
+          <!-- Ch1 -->
+          <rect x="4" y="80" width="124" height="42" rx="6" fill="#F2F2F7"></rect>
+          <text x="8" y="95" font-family="sans-serif" font-size="12" fill="#8E8E93">Ch1</text>
+          <text x="124" y="95" text-anchor="end" font-family="sans-serif" font-size="12" fill="#8E8E93">1800</text>
+          <text x="124" y="118" text-anchor="end" font-family="sans-serif" font-size="20" font-weight="bold" fill="#34C759">2000us</text>
+          <!-- Ch2 -->
+          <rect x="140" y="80" width="124" height="42" rx="6" fill="#F2F2F7"></rect>
+          <text x="144" y="95" font-family="sans-serif" font-size="12" fill="#8E8E93">Ch2</text>
+          <text x="260" y="95" text-anchor="end" font-family="sans-serif" font-size="12" fill="#8E8E93">1600</text>
+          <text x="260" y="118" text-anchor="end" font-family="sans-serif" font-size="20" font-weight="bold" fill="#007AFF">1000us</text>
+          <!-- Ch3 -->
+          <rect x="4" y="126" width="124" height="42" rx="6" fill="#F2F2F7" stroke="#007AFF" stroke-width="2"></rect>
+          <text x="8" y="141" font-family="sans-serif" font-size="12" fill="#8E8E93">Ch3</text>
+          <text x="124" y="141" text-anchor="end" font-family="sans-serif" font-size="12" fill="#8E8E93">0920</text>
+          <text x="124" y="164" text-anchor="end" font-family="sans-serif" font-size="20" font-weight="bold" fill="#8E8E93">1500us</text>
+          <!-- Ch4 -->
+          <rect x="140" y="126" width="124" height="42" rx="6" fill="#F2F2F7"></rect>
+          <text x="144" y="141" font-family="sans-serif" font-size="12" fill="#8E8E93">Ch4</text>
+          <text x="260" y="141" text-anchor="end" font-family="sans-serif" font-size="12" fill="#8E8E93">0000</text>
+          <text x="260" y="164" text-anchor="end" font-family="sans-serif" font-size="20" font-weight="bold" fill="#007AFF">1000us</text>
+          <!-- Ch5 -->
+          <rect x="4" y="172" width="124" height="42" rx="6" fill="#F2F2F7"></rect>
+          <text x="8" y="187" font-family="sans-serif" font-size="12" fill="#8E8E93">Ch5</text>
+          <text x="124" y="187" text-anchor="end" font-family="sans-serif" font-size="12" fill="#8E8E93">2000</text>
+          <text x="124" y="210" text-anchor="end" font-family="sans-serif" font-size="20" font-weight="bold" fill="#34C759">2000us</text>
+          <!-- Ch6 -->
+          <rect x="140" y="172" width="124" height="42" rx="6" fill="#F2F2F7"></rect>
+          <text x="144" y="187" font-family="sans-serif" font-size="12" fill="#8E8E93">Ch6</text>
+          <text x="260" y="187" text-anchor="end" font-family="sans-serif" font-size="12" fill="#8E8E93">1800</text>
+          <text x="260" y="210" text-anchor="end" font-family="sans-serif" font-size="20" font-weight="bold" fill="#34C759">1750us</text>
+          <!-- E-STOP -->
+          <rect x="4" y="230" width="256" height="70" rx="10" fill="#FF3B30"></rect>
+          <text x="132" y="272" text-anchor="middle" font-family="sans-serif" font-size="20" font-weight="bold" fill="#FFFFFF">E-STOP</text>
+          <!-- Info -->
+          <text x="140" y="325" text-anchor="middle" font-family="sans-serif" font-size="11" fill="#333333">Click Ch to pause single finger.</text>
+          <text x="140" y="340" text-anchor="middle" font-family="sans-serif" font-size="11" fill="#333333">Click E-STOP to pause all.</text>
+          <!-- Disconnect -->
+          <rect x="10" y="404" width="120" height="42" rx="8" fill="#007AFF"></rect>
+          <text x="70" y="431" text-anchor="middle" font-family="sans-serif" font-size="18" fill="#FFFFFF">Disconnect</text>
+          <!-- Clear All -->
+          <rect x="150" y="404" width="120" height="42" rx="8" fill="#8E8E93"></rect>
+          <text x="210" y="431" text-anchor="middle" font-family="sans-serif" font-size="18" fill="#FFFFFF">Clear All</text>
+        </svg>
+      </div>
+      <div class="screen-label">PWM 输出屏 — PWM Output</div>
+      <div class="screen-desc">6 通道输入/输出显示 + 急停按钮 + 覆盖高亮（Ch3 蓝框）</div>
+    </div>
+  </div>
+
+  <h4>PWM 屏交互</h4>
+  <ul>
+    <li><strong>通道格子</strong>：点击切换手动覆盖（输出 1500us 中位），蓝框边框高亮表示已覆盖</li>
+    <li><strong>输出颜色</strong>：绿色 = 2000/1750us（高）；蓝色 = 1000/1400us（低）；灰色 = 1500us（暂停）</li>
+    <li><strong>E-STOP 按钮</strong>：红色大按钮，点击后所有通道强制 1500us，按钮变为"Resume"深红+黄边</li>
+    <li><strong>Disconnect</strong>：断开 BLE 连接返回主屏</li>
+    <li><strong>Clear All</strong>：清空 PWM 显示（不清除覆盖/急停状态）</li>
+  </ul>
+
+  <!-- ===== 4.6 手势屏 ===== -->
+  <h3>4.6 手势屏 — 自主训练 (Gesture Screen)</h3>
+  <p>离线手势训练模式，提供 12 种预设手势图案。点击任一手势，系统直接输出对应的 6 路 PWM 脉宽，无需 BLE 连接。</p>
+
+  <div class="phone-mockup-grid">
+    <div class="phone-mockup">
+      <div class="phone-bezel">
+        <svg class="screen-svg" viewBox="0 0 280 456" xmlns="http://www.w3.org/2000/svg">
+          <rect width="280" height="456" fill="#FFFFFF"></rect>
+          <!-- Title -->
+          <text x="140" y="25" text-anchor="middle" font-family="sans-serif" font-size="24" font-weight="bold" fill="#007AFF">Gesture</text>
+          <!-- Status -->
+          <text x="140" y="62" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#86868B">12 Gestures</text>
+          <!-- Grid -->
+          <!-- Row 1: 1, 2 -->
+          <rect x="4" y="80" width="124" height="42" rx="6" fill="#007AFF"></rect>
+          <circle cx="22" cy="101" r="14" fill="#FFFFFF" opacity="0.3"></circle>
+          <text x="22" y="106" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#FFFFFF">1</text>
+          <text x="52" y="106" font-family="sans-serif" font-size="16" font-weight="bold" fill="#FFFFFF">1</text>
+          <rect x="140" y="80" width="124" height="42" rx="6" fill="#F2F2F7"></rect>
+          <circle cx="158" cy="101" r="14" fill="#E5E5EA"></circle>
+          <text x="158" y="106" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#86868B">2</text>
+          <text x="188" y="106" font-family="sans-serif" font-size="16" fill="#333333">2</text>
+          <!-- Row 2: 3, 4 -->
+          <rect x="4" y="126" width="124" height="42" rx="6" fill="#F2F2F7"></rect>
+          <circle cx="22" cy="147" r="14" fill="#E5E5EA"></circle>
+          <text x="22" y="152" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#86868B">3</text>
+          <text x="52" y="152" font-family="sans-serif" font-size="16" fill="#333333">3</text>
+          <rect x="140" y="126" width="124" height="42" rx="6" fill="#F2F2F7"></rect>
+          <circle cx="158" cy="147" r="14" fill="#E5E5EA"></circle>
+          <text x="158" y="152" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#86868B">4</text>
+          <text x="188" y="152" font-family="sans-serif" font-size="16" fill="#333333">4</text>
+          <!-- Row 3: 5, 6 -->
+          <rect x="4" y="172" width="124" height="42" rx="6" fill="#F2F2F7"></rect>
+          <circle cx="22" cy="193" r="14" fill="#E5E5EA"></circle>
+          <text x="22" y="198" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#86868B">5</text>
+          <text x="52" y="198" font-family="sans-serif" font-size="16" fill="#333333">5</text>
+          <rect x="140" y="172" width="124" height="42" rx="6" fill="#F2F2F7"></rect>
+          <circle cx="158" cy="193" r="14" fill="#E5E5EA"></circle>
+          <text x="158" y="198" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#86868B">6</text>
+          <text x="188" y="198" font-family="sans-serif" font-size="16" fill="#333333">6</text>
+          <!-- Row 4: 7, 8 -->
+          <rect x="4" y="218" width="124" height="42" rx="6" fill="#F2F2F7"></rect>
+          <circle cx="22" cy="239" r="14" fill="#E5E5EA"></circle>
+          <text x="22" y="244" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#86868B">7</text>
+          <text x="52" y="244" font-family="sans-serif" font-size="16" fill="#333333">7</text>
+          <rect x="140" y="218" width="124" height="42" rx="6" fill="#F2F2F7"></rect>
+          <circle cx="158" cy="239" r="14" fill="#E5E5EA"></circle>
+          <text x="158" y="244" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#86868B">8</text>
+          <text x="188" y="244" font-family="sans-serif" font-size="16" fill="#333333">8</text>
+          <!-- Row 5: 10, ok -->
+          <rect x="4" y="264" width="124" height="42" rx="6" fill="#F2F2F7"></rect>
+          <circle cx="22" cy="285" r="14" fill="#E5E5EA"></circle>
+          <text x="22" y="290" text-anchor="middle" font-family="sans-serif" font-size="12" fill="#86868B">10</text>
+          <text x="52" y="290" font-family="sans-serif" font-size="16" fill="#333333">10</text>
+          <rect x="140" y="264" width="124" height="42" rx="6" fill="#F2F2F7"></rect>
+          <circle cx="158" cy="285" r="14" fill="#E5E5EA"></circle>
+          <text x="158" y="290" text-anchor="middle" font-family="sans-serif" font-size="10" fill="#86868B">OK</text>
+          <text x="188" y="290" font-family="sans-serif" font-size="16" fill="#333333">ok</text>
+          <!-- Row 6: good, love -->
+          <rect x="4" y="310" width="124" height="42" rx="6" fill="#F2F2F7"></rect>
+          <circle cx="22" cy="331" r="14" fill="#E5E5EA"></circle>
+          <text x="22" y="336" text-anchor="middle" font-family="sans-serif" font-size="9" fill="#86868B">👍</text>
+          <text x="52" y="336" font-family="sans-serif" font-size="16" fill="#333333">good</text>
+          <rect x="140" y="310" width="124" height="42" rx="6" fill="#F2F2F7"></rect>
+          <circle cx="158" cy="331" r="14" fill="#E5E5EA"></circle>
+          <text x="158" y="336" text-anchor="middle" font-family="sans-serif" font-size="9" fill="#86868B">❤</text>
+          <text x="188" y="336" font-family="sans-serif" font-size="16" fill="#333333">love</text>
+          <!-- Info -->
+          <text x="140" y="378" text-anchor="middle" font-family="monospace" font-size="11" fill="#333333">PWM: 1450 1000 1000 1000 1000 1000</text>
+        </svg>
+      </div>
+      <div class="phone-label"></div>
+      <div class="screen-label">手势屏 — Gesture</div>
+      <div class="screen-desc">12 格手势网格（选中"1"蓝底白字）+ 6 路 PWM 汇总</div>
+    </div>
+  </div>
+
+  <h4>12 种手势及 PWM 映射</h4>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>序号</th><th>手势名称</th><th>CH1 (us)</th><th>CH2 (us)</th><th>CH3 (us)</th><th>CH4 (us)</th><th>CH5 (us)</th><th>CH6 (us)</th><th>含义</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>1</td><td>1</td><td>1450</td><td>1000</td><td>1000</td><td>1000</td><td>1000</td><td>1000</td><td>竖食指</td></tr>
+        <tr><td>2</td><td>2</td><td>1450</td><td>1000</td><td>2000</td><td>2000</td><td>1000</td><td>1000</td><td>食指+中指</td></tr>
+        <tr><td>3</td><td>3</td><td>1450</td><td>1000</td><td>2000</td><td>2000</td><td>2000</td><td>1000</td><td>三指</td></tr>
+        <tr><td>4</td><td>4</td><td>1450</td><td>1000</td><td>2000</td><td>2000</td><td>2000</td><td>2000</td><td>四指</td></tr>
+        <tr><td>5</td><td>5</td><td>1700</td><td>2000</td><td>2000</td><td>2000</td><td>2000</td><td>2000</td><td>全开掌</td></tr>
+        <tr><td>6</td><td>6</td><td>1700</td><td>2000</td><td>1000</td><td>1000</td><td>1000</td><td>2000</td><td>OK 手势</td></tr>
+        <tr><td>7</td><td>7</td><td>1700</td><td>2000</td><td>2000</td><td>2000</td><td>1000</td><td>1000</td><td>七指</td></tr>
+        <tr><td>8</td><td>8</td><td>1700</td><td>2000</td><td>2000</td><td>1000</td><td>1000</td><td>1000</td><td>八指</td></tr>
+        <tr><td>9</td><td>10</td><td>1450</td><td>1000</td><td>1000</td><td>1000</td><td>1000</td><td>1000</td><td>握拳</td></tr>
+        <tr><td>10</td><td>ok</td><td>1450</td><td>1000</td><td>1000</td><td>1000</td><td>1000</td><td>1000</td><td>OK 圈</td></tr>
+        <tr><td>11</td><td>good</td><td>1450</td><td>1000</td><td>1000</td><td>2000</td><td>2000</td><td>2000</td><td>点赞</td></tr>
+        <tr><td>12</td><td>love</td><td>1700</td><td>2000</td><td>2000</td><td>1000</td><td>1000</td><td>2000</td><td>爱心</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="callout">
+    <p><strong>手势模式说明：</strong>进入手势屏时自动开启手势模式（<code>pwm_manager_set_gesture_mode(true)</code>），PWM 输出不再跟随 BLE 输入，而是由选中的手势直接指定。返回主屏时自动设置回归姿势（1700/2000/2000/2000/2000/2000us）。点击主屏"SCAN"恢复 BLE 驱动模式时自动关闭手势模式。</p>
+  </div>
+</section>
+
+<!-- ============ 5. 数据流程 ============ -->
+<section>
+  <h2><span class="num">05</span>数据通信流程</h2>
+
+  <h3>BLE 通信链路</h3>
+  <figure class="diagram">
+    <pre class="mermaid" data-processed="true"><svg id="mermaid-1787034973791" width="100%" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" style="max-width: 586px;" viewBox="-95 -10 586 1373" role="graphics-document document" aria-roledescription="sequence"><g><rect x="291" y="1287" fill="#eaeaea" stroke="#666" width="150" height="65" name="Sensor" rx="3" ry="3" class="actor actor-bottom"></rect><text x="366" y="1319.5" dominant-baseline="central" alignment-baseline="central" class="actor actor-box" style="text-anchor: middle; font-size: 16px; font-weight: 400;"><tspan x="366" dy="0">传感器/上位机</tspan></text></g><g><rect x="0" y="1287" fill="#eaeaea" stroke="#666" width="154" height="65" name="Display" rx="3" ry="3" class="actor actor-bottom"></rect><text x="77" y="1319.5" dominant-baseline="central" alignment-baseline="central" class="actor actor-box" style="text-anchor: middle; font-size: 16px; font-weight: 400;"><tspan x="77" dy="0">显示屏 (ESP32-S3)</tspan></text></g><g><line id="actor1" x1="366" y1="65" x2="366" y2="1287" class="actor-line 200" stroke-width="0.5px" stroke="#999" name="Sensor"></line><g id="root-1"><rect x="291" y="0" fill="#eaeaea" stroke="#666" width="150" height="65" name="Sensor" rx="3" ry="3" class="actor actor-top"></rect><text x="366" y="32.5" dominant-baseline="central" alignment-baseline="central" class="actor actor-box" style="text-anchor: middle; font-size: 16px; font-weight: 400;"><tspan x="366" dy="0">传感器/上位机</tspan></text></g></g><g><line id="actor0" x1="77" y1="65" x2="77" y2="1287" class="actor-line 200" stroke-width="0.5px" stroke="#999" name="Display"></line><g id="root-0"><rect x="0" y="0" fill="#eaeaea" stroke="#666" width="154" height="65" name="Display" rx="3" ry="3" class="actor actor-top"></rect><text x="77" y="32.5" dominant-baseline="central" alignment-baseline="central" class="actor actor-box" style="text-anchor: middle; font-size: 16px; font-weight: 400;"><tspan x="77" dy="0">显示屏 (ESP32-S3)</tspan></text></g></g><style>#mermaid-1787034973791{font-family:"trebuchet ms",verdana,arial,sans-serif;font-size:16px;fill:#000000;}#mermaid-1787034973791 .error-icon{fill:#552222;}#mermaid-1787034973791 .error-text{fill:#552222;stroke:#552222;}#mermaid-1787034973791 .edge-thickness-normal{stroke-width:1px;}#mermaid-1787034973791 .edge-thickness-thick{stroke-width:3.5px;}#mermaid-1787034973791 .edge-pattern-solid{stroke-dasharray:0;}#mermaid-1787034973791 .edge-thickness-invisible{stroke-width:0;fill:none;}#mermaid-1787034973791 .edge-pattern-dashed{stroke-dasharray:3;}#mermaid-1787034973791 .edge-pattern-dotted{stroke-dasharray:2;}#mermaid-1787034973791 .marker{fill:#666;stroke:#666;}#mermaid-1787034973791 .marker.cross{stroke:#666;}#mermaid-1787034973791 svg{font-family:"trebuchet ms",verdana,arial,sans-serif;font-size:16px;}#mermaid-1787034973791 p{margin:0;}#mermaid-1787034973791 .actor{stroke:hsl(0, 0%, 83%);fill:#eee;}#mermaid-1787034973791 text.actor&gt;tspan{fill:#333;stroke:none;}#mermaid-1787034973791 .actor-line{stroke:hsl(0, 0%, 83%);}#mermaid-1787034973791 .messageLine0{stroke-width:1.5;stroke-dasharray:none;stroke:#333;}#mermaid-1787034973791 .messageLine1{stroke-width:1.5;stroke-dasharray:2,2;stroke:#333;}#mermaid-1787034973791 #arrowhead path{fill:#333;stroke:#333;}#mermaid-1787034973791 .sequenceNumber{fill:white;}#mermaid-1787034973791 #sequencenumber{fill:#333;}#mermaid-1787034973791 #crosshead path{fill:#333;stroke:#333;}#mermaid-1787034973791 .messageText{fill:#333;stroke:none;}#mermaid-1787034973791 .labelBox{stroke:hsl(0, 0%, 83%);fill:#eee;}#mermaid-1787034973791 .labelText,#mermaid-1787034973791 .labelText&gt;tspan{fill:#333;stroke:none;}#mermaid-1787034973791 .loopText,#mermaid-1787034973791 .loopText&gt;tspan{fill:#333;stroke:none;}#mermaid-1787034973791 .loopLine{stroke-width:2px;stroke-dasharray:2,2;stroke:hsl(0, 0%, 83%);fill:hsl(0, 0%, 83%);}#mermaid-1787034973791 .note{stroke:#999;fill:#666;}#mermaid-1787034973791 .noteText,#mermaid-1787034973791 .noteText&gt;tspan{fill:#fff;stroke:none;}#mermaid-1787034973791 .activation0{fill:#f4f4f4;stroke:#666;}#mermaid-1787034973791 .activation1{fill:#f4f4f4;stroke:#666;}#mermaid-1787034973791 .activation2{fill:#f4f4f4;stroke:#666;}#mermaid-1787034973791 .actorPopupMenu{position:absolute;}#mermaid-1787034973791 .actorPopupMenuPanel{position:absolute;fill:#eee;box-shadow:0px 8px 16px 0px rgba(0,0,0,0.2);filter:drop-shadow(3px 5px 2px rgb(0 0 0 / 0.4));}#mermaid-1787034973791 .actor-man line{stroke:hsl(0, 0%, 83%);fill:#eee;}#mermaid-1787034973791 .actor-man circle,#mermaid-1787034973791 line{stroke:hsl(0, 0%, 83%);fill:#eee;stroke-width:2px;}#mermaid-1787034973791 :root{--mermaid-font-family:"trebuchet ms",verdana,arial,sans-serif;}</style><g></g><defs><symbol id="computer" width="24" height="24"><path transform="scale(.5)" d="M2 2v13h20v-13h-20zm18 11h-16v-9h16v9zm-10.228 6l.466-1h3.524l.467 1h-4.457zm14.228 3h-24l2-6h2.104l-1.33 4h18.45l-1.297-4h2.073l2 6zm-5-10h-14v-7h14v7z"></path></symbol></defs><defs><symbol id="database" fill-rule="evenodd" clip-rule="evenodd"><path transform="scale(.5)" d="M12.258.001l.256.004.255.005.253.008.251.01.249.012.247.015.246.016.242.019.241.02.239.023.236.024.233.027.231.028.229.031.225.032.223.034.22.036.217.038.214.04.211.041.208.043.205.045.201.046.198.048.194.05.191.051.187.053.183.054.18.056.175.057.172.059.168.06.163.061.16.063.155.064.15.066.074.033.073.033.071.034.07.034.069.035.068.035.067.035.066.035.064.036.064.036.062.036.06.036.06.037.058.037.058.037.055.038.055.038.053.038.052.038.051.039.05.039.048.039.047.039.045.04.044.04.043.04.041.04.04.041.039.041.037.041.036.041.034.041.033.042.032.042.03.042.029.042.027.042.026.043.024.043.023.043.021.043.02.043.018.044.017.043.015.044.013.044.012.044.011.045.009.044.007.045.006.045.004.045.002.045.001.045v17l-.001.045-.002.045-.004.045-.006.045-.007.045-.009.044-.011.045-.012.044-.013.044-.015.044-.017.043-.018.044-.02.043-.021.043-.023.043-.024.043-.026.043-.027.042-.029.042-.03.042-.032.042-.033.042-.034.041-.036.041-.037.041-.039.041-.04.041-.041.04-.043.04-.044.04-.045.04-.047.039-.048.039-.05.039-.051.039-.052.038-.053.038-.055.038-.055.038-.058.037-.058.037-.06.037-.06.036-.062.036-.064.036-.064.036-.066.035-.067.035-.068.035-.069.035-.07.034-.071.034-.073.033-.074.033-.15.066-.155.064-.16.063-.163.061-.168.06-.172.059-.175.057-.18.056-.183.054-.187.053-.191.051-.194.05-.198.048-.201.046-.205.045-.208.043-.211.041-.214.04-.217.038-.22.036-.223.034-.225.032-.229.031-.231.028-.233.027-.236.024-.239.023-.241.02-.242.019-.246.016-.247.015-.249.012-.251.01-.253.008-.255.005-.256.004-.258.001-.258-.001-.256-.004-.255-.005-.253-.008-.251-.01-.249-.012-.247-.015-.245-.016-.243-.019-.241-.02-.238-.023-.236-.024-.234-.027-.231-.028-.228-.031-.226-.032-.223-.034-.22-.036-.217-.038-.214-.04-.211-.041-.208-.043-.204-.045-.201-.046-.198-.048-.195-.05-.19-.051-.187-.053-.184-.054-.179-.056-.176-.057-.172-.059-.167-.06-.164-.061-.159-.063-.155-.064-.151-.066-.074-.033-.072-.033-.072-.034-.07-.034-.069-.035-.068-.035-.067-.035-.066-.035-.064-.036-.063-.036-.062-.036-.061-.036-.06-.037-.058-.037-.057-.037-.056-.038-.055-.038-.053-.038-.052-.038-.051-.039-.049-.039-.049-.039-.046-.039-.046-.04-.044-.04-.043-.04-.041-.04-.04-.041-.039-.041-.037-.041-.036-.041-.034-.041-.033-.042-.032-.042-.03-.042-.029-.042-.027-.042-.026-.043-.024-.043-.023-.043-.021-.043-.02-.043-.018-.044-.017-.043-.015-.044-.013-.044-.012-.044-.011-.045-.009-.044-.007-.045-.006-.045-.004-.045-.002-.045-.001-.045v-17l.001-.045.002-.045.004-.045.006-.045.007-.045.009-.044.011-.045.012-.044.013-.044.015-.044.017-.043.018-.044.02-.043.021-.043.023-.043.024-.043.026-.043.027-.042.029-.042.03-.042.032-.042.033-.042.034-.041.036-.041.037-.041.039-.041.04-.041.041-.04.043-.04.044-.04.046-.04.046-.039.049-.039.049-.039.051-.039.052-.038.053-.038.055-.038.056-.038.057-.037.058-.037.06-.037.061-.036.062-.036.063-.036.064-.036.066-.035.067-.035.068-.035.069-.035.07-.034.072-.034.072-.033.074-.033.151-.066.155-.064.159-.063.164-.061.167-.06.172-.059.176-.057.179-.056.184-.054.187-.053.19-.051.195-.05.198-.048.201-.046.204-.045.208-.043.211-.041.214-.04.217-.038.22-.036.223-.034.226-.032.228-.031.231-.028.234-.027.236-.024.238-.023.241-.02.243-.019.245-.016.247-.015.249-.012.251-.01.253-.008.255-.005.256-.004.258-.001.258.001zm-9.258 20.499v.01l.001.021.003.021.004.022.005.021.006.022.007.022.009.023.01.022.011.023.012.023.013.023.015.023.016.024.017.023.018.024.019.024.021.024.022.025.023.024.024.025.052.049.056.05.061.051.066.051.07.051.075.051.079.052.084.052.088.052.092.052.097.052.102.051.105.052.11.052.114.051.119.051.123.051.127.05.131.05.135.05.139.048.144.049.147.047.152.047.155.047.16.045.163.045.167.043.171.043.176.041.178.041.183.039.187.039.19.037.194.035.197.035.202.033.204.031.209.03.212.029.216.027.219.025.222.024.226.021.23.02.233.018.236.016.24.015.243.012.246.01.249.008.253.005.256.004.259.001.26-.001.257-.004.254-.005.25-.008.247-.011.244-.012.241-.014.237-.016.233-.018.231-.021.226-.021.224-.024.22-.026.216-.027.212-.028.21-.031.205-.031.202-.034.198-.034.194-.036.191-.037.187-.039.183-.04.179-.04.175-.042.172-.043.168-.044.163-.045.16-.046.155-.046.152-.047.148-.048.143-.049.139-.049.136-.05.131-.05.126-.05.123-.051.118-.052.114-.051.11-.052.106-.052.101-.052.096-.052.092-.052.088-.053.083-.051.079-.052.074-.052.07-.051.065-.051.06-.051.056-.05.051-.05.023-.024.023-.025.021-.024.02-.024.019-.024.018-.024.017-.024.015-.023.014-.024.013-.023.012-.023.01-.023.01-.022.008-.022.006-.022.006-.022.004-.022.004-.021.001-.021.001-.021v-4.127l-.077.055-.08.053-.083.054-.085.053-.087.052-.09.052-.093.051-.095.05-.097.05-.1.049-.102.049-.105.048-.106.047-.109.047-.111.046-.114.045-.115.045-.118.044-.12.043-.122.042-.124.042-.126.041-.128.04-.13.04-.132.038-.134.038-.135.037-.138.037-.139.035-.142.035-.143.034-.144.033-.147.032-.148.031-.15.03-.151.03-.153.029-.154.027-.156.027-.158.026-.159.025-.161.024-.162.023-.163.022-.165.021-.166.02-.167.019-.169.018-.169.017-.171.016-.173.015-.173.014-.175.013-.175.012-.177.011-.178.01-.179.008-.179.008-.181.006-.182.005-.182.004-.184.003-.184.002h-.37l-.184-.002-.184-.003-.182-.004-.182-.005-.181-.006-.179-.008-.179-.008-.178-.01-.176-.011-.176-.012-.175-.013-.173-.014-.172-.015-.171-.016-.17-.017-.169-.018-.167-.019-.166-.02-.165-.021-.163-.022-.162-.023-.161-.024-.159-.025-.157-.026-.156-.027-.155-.027-.153-.029-.151-.03-.15-.03-.148-.031-.146-.032-.145-.033-.143-.034-.141-.035-.14-.035-.137-.037-.136-.037-.134-.038-.132-.038-.13-.04-.128-.04-.126-.041-.124-.042-.122-.042-.12-.044-.117-.043-.116-.045-.113-.045-.112-.046-.109-.047-.106-.047-.105-.048-.102-.049-.1-.049-.097-.05-.095-.05-.093-.052-.09-.051-.087-.052-.085-.053-.083-.054-.08-.054-.077-.054v4.127zm0-5.654v.011l.001.021.003.021.004.021.005.022.006.022.007.022.009.022.01.022.011.023.012.023.013.023.015.024.016.023.017.024.018.024.019.024.021.024.022.024.023.025.024.024.052.05.056.05.061.05.066.051.07.051.075.052.079.051.084.052.088.052.092.052.097.052.102.052.105.052.11.051.114.051.119.052.123.05.127.051.131.05.135.049.139.049.144.048.147.048.152.047.155.046.16.045.163.045.167.044.171.042.176.042.178.04.183.04.187.038.19.037.194.036.197.034.202.033.204.032.209.03.212.028.216.027.219.025.222.024.226.022.23.02.233.018.236.016.24.014.243.012.246.01.249.008.253.006.256.003.259.001.26-.001.257-.003.254-.006.25-.008.247-.01.244-.012.241-.015.237-.016.233-.018.231-.02.226-.022.224-.024.22-.025.216-.027.212-.029.21-.03.205-.032.202-.033.198-.035.194-.036.191-.037.187-.039.183-.039.179-.041.175-.042.172-.043.168-.044.163-.045.16-.045.155-.047.152-.047.148-.048.143-.048.139-.05.136-.049.131-.05.126-.051.123-.051.118-.051.114-.052.11-.052.106-.052.101-.052.096-.052.092-.052.088-.052.083-.052.079-.052.074-.051.07-.052.065-.051.06-.05.056-.051.051-.049.023-.025.023-.024.021-.025.02-.024.019-.024.018-.024.017-.024.015-.023.014-.023.013-.024.012-.022.01-.023.01-.023.008-.022.006-.022.006-.022.004-.021.004-.022.001-.021.001-.021v-4.139l-.077.054-.08.054-.083.054-.085.052-.087.053-.09.051-.093.051-.095.051-.097.05-.1.049-.102.049-.105.048-.106.047-.109.047-.111.046-.114.045-.115.044-.118.044-.12.044-.122.042-.124.042-.126.041-.128.04-.13.039-.132.039-.134.038-.135.037-.138.036-.139.036-.142.035-.143.033-.144.033-.147.033-.148.031-.15.03-.151.03-.153.028-.154.028-.156.027-.158.026-.159.025-.161.024-.162.023-.163.022-.165.021-.166.02-.167.019-.169.018-.169.017-.171.016-.173.015-.173.014-.175.013-.175.012-.177.011-.178.009-.179.009-.179.007-.181.007-.182.005-.182.004-.184.003-.184.002h-.37l-.184-.002-.184-.003-.182-.004-.182-.005-.181-.007-.179-.007-.179-.009-.178-.009-.176-.011-.176-.012-.175-.013-.173-.014-.172-.015-.171-.016-.17-.017-.169-.018-.167-.019-.166-.02-.165-.021-.163-.022-.162-.023-.161-.024-.159-.025-.157-.026-.156-.027-.155-.028-.153-.028-.151-.03-.15-.03-.148-.031-.146-.033-.145-.033-.143-.033-.141-.035-.14-.036-.137-.036-.136-.037-.134-.038-.132-.039-.13-.039-.128-.04-.126-.041-.124-.042-.122-.043-.12-.043-.117-.044-.116-.044-.113-.046-.112-.046-.109-.046-.106-.047-.105-.048-.102-.049-.1-.049-.097-.05-.095-.051-.093-.051-.09-.051-.087-.053-.085-.052-.083-.054-.08-.054-.077-.054v4.139zm0-5.666v.011l.001.02.003.022.004.021.005.022.006.021.007.022.009.023.01.022.011.023.012.023.013.023.015.023.016.024.017.024.018.023.019.024.021.025.022.024.023.024.024.025.052.05.056.05.061.05.066.051.07.051.075.052.079.051.084.052.088.052.092.052.097.052.102.052.105.051.11.052.114.051.119.051.123.051.127.05.131.05.135.05.139.049.144.048.147.048.152.047.155.046.16.045.163.045.167.043.171.043.176.042.178.04.183.04.187.038.19.037.194.036.197.034.202.033.204.032.209.03.212.028.216.027.219.025.222.024.226.021.23.02.233.018.236.017.24.014.243.012.246.01.249.008.253.006.256.003.259.001.26-.001.257-.003.254-.006.25-.008.247-.01.244-.013.241-.014.237-.016.233-.018.231-.02.226-.022.224-.024.22-.025.216-.027.212-.029.21-.03.205-.032.202-.033.198-.035.194-.036.191-.037.187-.039.183-.039.179-.041.175-.042.172-.043.168-.044.163-.045.16-.045.155-.047.152-.047.148-.048.143-.049.139-.049.136-.049.131-.051.126-.05.123-.051.118-.052.114-.051.11-.052.106-.052.101-.052.096-.052.092-.052.088-.052.083-.052.079-.052.074-.052.07-.051.065-.051.06-.051.056-.05.051-.049.023-.025.023-.025.021-.024.02-.024.019-.024.018-.024.017-.024.015-.023.014-.024.013-.023.012-.023.01-.022.01-.023.008-.022.006-.022.006-.022.004-.022.004-.021.001-.021.001-.021v-4.153l-.077.054-.08.054-.083.053-.085.053-.087.053-.09.051-.093.051-.095.051-.097.05-.1.049-.102.048-.105.048-.106.048-.109.046-.111.046-.114.046-.115.044-.118.044-.12.043-.122.043-.124.042-.126.041-.128.04-.13.039-.132.039-.134.038-.135.037-.138.036-.139.036-.142.034-.143.034-.144.033-.147.032-.148.032-.15.03-.151.03-.153.028-.154.028-.156.027-.158.026-.159.024-.161.024-.162.023-.163.023-.165.021-.166.02-.167.019-.169.018-.169.017-.171.016-.173.015-.173.014-.175.013-.175.012-.177.01-.178.01-.179.009-.179.007-.181.006-.182.006-.182.004-.184.003-.184.001-.185.001-.185-.001-.184-.001-.184-.003-.182-.004-.182-.006-.181-.006-.179-.007-.179-.009-.178-.01-.176-.01-.176-.012-.175-.013-.173-.014-.172-.015-.171-.016-.17-.017-.169-.018-.167-.019-.166-.02-.165-.021-.163-.023-.162-.023-.161-.024-.159-.024-.157-.026-.156-.027-.155-.028-.153-.028-.151-.03-.15-.03-.148-.032-.146-.032-.145-.033-.143-.034-.141-.034-.14-.036-.137-.036-.136-.037-.134-.038-.132-.039-.13-.039-.128-.041-.126-.041-.124-.041-.122-.043-.12-.043-.117-.044-.116-.044-.113-.046-.112-.046-.109-.046-.106-.048-.105-.048-.102-.048-.1-.05-.097-.049-.095-.051-.093-.051-.09-.052-.087-.052-.085-.053-.083-.053-.08-.054-.077-.054v4.153zm8.74-8.179l-.257.004-.254.005-.25.008-.247.011-.244.012-.241.014-.237.016-.233.018-.231.021-.226.022-.224.023-.22.026-.216.027-.212.028-.21.031-.205.032-.202.033-.198.034-.194.036-.191.038-.187.038-.183.04-.179.041-.175.042-.172.043-.168.043-.163.045-.16.046-.155.046-.152.048-.148.048-.143.048-.139.049-.136.05-.131.05-.126.051-.123.051-.118.051-.114.052-.11.052-.106.052-.101.052-.096.052-.092.052-.088.052-.083.052-.079.052-.074.051-.07.052-.065.051-.06.05-.056.05-.051.05-.023.025-.023.024-.021.024-.02.025-.019.024-.018.024-.017.023-.015.024-.014.023-.013.023-.012.023-.01.023-.01.022-.008.022-.006.023-.006.021-.004.022-.004.021-.001.021-.001.021.001.021.001.021.004.021.004.022.006.021.006.023.008.022.01.022.01.023.012.023.013.023.014.023.015.024.017.023.018.024.019.024.02.025.021.024.023.024.023.025.051.05.056.05.06.05.065.051.07.052.074.051.079.052.083.052.088.052.092.052.096.052.101.052.106.052.11.052.114.052.118.051.123.051.126.051.131.05.136.05.139.049.143.048.148.048.152.048.155.046.16.046.163.045.168.043.172.043.175.042.179.041.183.04.187.038.191.038.194.036.198.034.202.033.205.032.21.031.212.028.216.027.22.026.224.023.226.022.231.021.233.018.237.016.241.014.244.012.247.011.25.008.254.005.257.004.26.001.26-.001.257-.004.254-.005.25-.008.247-.011.244-.012.241-.014.237-.016.233-.018.231-.021.226-.022.224-.023.22-.026.216-.027.212-.028.21-.031.205-.032.202-.033.198-.034.194-.036.191-.038.187-.038.183-.04.179-.041.175-.042.172-.043.168-.043.163-.045.16-.046.155-.046.152-.048.148-.048.143-.048.139-.049.136-.05.131-.05.126-.051.123-.051.118-.051.114-.052.11-.052.106-.052.101-.052.096-.052.092-.052.088-.052.083-.052.079-.052.074-.051.07-.052.065-.051.06-.05.056-.05.051-.05.023-.025.023-.024.021-.024.02-.025.019-.024.018-.024.017-.023.015-.024.014-.023.013-.023.012-.023.01-.023.01-.022.008-.022.006-.023.006-.021.004-.022.004-.021.001-.021.001-.021-.001-.021-.001-.021-.004-.021-.004-.022-.006-.021-.006-.023-.008-.022-.01-.022-.01-.023-.012-.023-.013-.023-.014-.023-.015-.024-.017-.023-.018-.024-.019-.024-.02-.025-.021-.024-.023-.024-.023-.025-.051-.05-.056-.05-.06-.05-.065-.051-.07-.052-.074-.051-.079-.052-.083-.052-.088-.052-.092-.052-.096-.052-.101-.052-.106-.052-.11-.052-.114-.052-.118-.051-.123-.051-.126-.051-.131-.05-.136-.05-.139-.049-.143-.048-.148-.048-.152-.048-.155-.046-.16-.046-.163-.045-.168-.043-.172-.043-.175-.042-.179-.041-.183-.04-.187-.038-.191-.038-.194-.036-.198-.034-.202-.033-.205-.032-.21-.031-.212-.028-.216-.027-.22-.026-.224-.023-.226-.022-.231-.021-.233-.018-.237-.016-.241-.014-.244-.012-.247-.011-.25-.008-.254-.005-.257-.004-.26-.001-.26.001z"></path></symbol></defs><defs><symbol id="clock" width="24" height="24"><path transform="scale(.5)" d="M12 2c5.514 0 10 4.486 10 10s-4.486 10-10 10-10-4.486-10-10 4.486-10 10-10zm0-2c-6.627 0-12 5.373-12 12s5.373 12 12 12 12-5.373 12-12-5.373-12-12-12zm5.848 12.459c.202.038.202.333.001.372-1.907.361-6.045 1.111-6.547 1.111-.719 0-1.301-.582-1.301-1.301 0-.512.77-5.447 1.125-7.445.034-.192.312-.181.343.014l.985 6.238 5.394 1.011z"></path></symbol></defs><defs><marker id="arrowhead" refX="7.9" refY="5" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" orient="auto-start-reverse"><path d="M -1 0 L 10 5 L 0 10 z"></path></marker></defs><defs><marker id="crosshead" markerWidth="15" markerHeight="8" orient="auto" refX="4" refY="4.5"><path fill="none" stroke="#000000" stroke-width="1pt" d="M 1,2 L 6,7 M 6,2 L 1,7" style="stroke-dasharray: 0, 0;"></path></marker></defs><defs><marker id="filled-head" refX="15.5" refY="7" markerWidth="20" markerHeight="28" orient="auto"><path d="M 18,7 L9,13 L14,7 L9,1 Z"></path></marker></defs><defs><marker id="sequencenumber" refX="15" refY="15" markerWidth="60" markerHeight="40" orient="auto"><circle cx="15" cy="15" r="6"></circle></marker></defs><g><rect x="0" y="75" fill="#EDF2AE" stroke="#666" width="154" height="41" class="note"></rect><text x="77" y="80" text-anchor="middle" dominant-baseline="middle" alignment-baseline="middle" class="noteText" dy="1em" style="font-size: 16px; font-weight: 400;"><tspan x="77">1. 扫描阶段</tspan></text></g><g><rect x="-23.5" y="238" fill="#EDF2AE" stroke="#666" width="201" height="41" class="note"></rect><text x="77" y="243" text-anchor="middle" dominant-baseline="middle" alignment-baseline="middle" class="noteText" dy="1em" style="font-size: 16px; font-weight: 400;"><tspan x="77">解析 UUID+SN, RSSI 排序</tspan></text></g><g><rect x="0" y="289" fill="#EDF2AE" stroke="#666" width="154" height="41" class="note"></rect><text x="77" y="294" text-anchor="middle" dominant-baseline="middle" alignment-baseline="middle" class="noteText" dy="1em" style="font-size: 16px; font-weight: 400;"><tspan x="77">2. 连接阶段</tspan></text></g><g><rect x="-45" y="564" fill="#EDF2AE" stroke="#666" width="244" height="41" class="note"></rect><text x="77" y="569" text-anchor="middle" dominant-baseline="middle" alignment-baseline="middle" class="noteText" dy="1em" style="font-size: 16px; font-weight: 400;"><tspan x="77">按 UUID 匹配 Notify/Write 特征</tspan></text></g><g><rect x="0" y="727" fill="#EDF2AE" stroke="#666" width="154" height="41" class="note"></rect><text x="77" y="732" text-anchor="middle" dominant-baseline="middle" alignment-baseline="middle" class="noteText" dy="1em" style="font-size: 16px; font-weight: 400;"><tspan x="77">3. 数据传输阶段</tspan></text></g><g><rect x="0" y="905" fill="#EDF2AE" stroke="#666" width="154" height="41" class="note"></rect><text x="77" y="910" text-anchor="middle" dominant-baseline="middle" alignment-baseline="middle" class="noteText" dy="1em" style="font-size: 16px; font-weight: 400;"><tspan x="77">ISR 到消息队列</tspan></text></g><g><rect x="-4" y="956" fill="#EDF2AE" stroke="#666" width="162" height="41" class="note"></rect><text x="77" y="961" text-anchor="middle" dominant-baseline="middle" alignment-baseline="middle" class="noteText" dy="1em" style="font-size: 16px; font-weight: 400;"><tspan x="77">帧重组 (按分号拼接)</tspan></text></g><g><rect x="0" y="1007" fill="#EDF2AE" stroke="#666" width="154" height="41" class="note"></rect><text x="77" y="1012" text-anchor="middle" dominant-baseline="middle" alignment-baseline="middle" class="noteText" dy="1em" style="font-size: 16px; font-weight: 400;"><tspan x="77">解析 11 路数值</tspan></text></g><g><rect x="-2.5" y="1058" fill="#EDF2AE" stroke="#666" width="159" height="41" class="note"></rect><text x="77" y="1063" text-anchor="middle" dominant-baseline="middle" alignment-baseline="middle" class="noteText" dy="1em" style="font-size: 16px; font-weight: 400;"><tspan x="77">刷新 UI + 驱动 PWM</tspan></text></g><g><line x1="-14" y1="778" x2="377" y2="778" class="loopLine"></line><line x1="377" y1="778" x2="377" y2="1109" class="loopLine"></line><line x1="-14" y1="1109" x2="377" y2="1109" class="loopLine"></line><line x1="-14" y1="778" x2="-14" y2="1109" class="loopLine"></line><polygon points="-14,778 36,778 36,791 27.6,798 -14,798" class="labelBox"></polygon><text x="11" y="791" text-anchor="middle" dominant-baseline="middle" alignment-baseline="middle" class="labelText" style="font-size: 16px; font-weight: 400;">loop</text><text x="206.5" y="796" text-anchor="middle" class="loopText" style="font-size: 16px; font-weight: 400;"><tspan x="206.5">[持续 Notify</tspan></text><text x="206.5" y="816" text-anchor="middle" class="loopText" style="font-size: 16px; font-weight: 400;"><tspan x="206.5">(~20Hz)]</tspan></text></g><g><rect x="0" y="1119" fill="#EDF2AE" stroke="#666" width="154" height="41" class="note"></rect><text x="77" y="1124" text-anchor="middle" dominant-baseline="middle" alignment-baseline="middle" class="noteText" dy="1em" style="font-size: 16px; font-weight: 400;"><tspan x="77">4. 断开</tspan></text></g><g><rect x="0" y="1226" fill="#EDF2AE" stroke="#666" width="154" height="41" class="note"></rect><text x="77" y="1231" text-anchor="middle" dominant-baseline="middle" alignment-baseline="middle" class="noteText" dy="1em" style="font-size: 16px; font-weight: 400;"><tspan x="77">清空队列 + 帧缓冲</tspan></text></g><text x="220" y="131" text-anchor="middle" dominant-baseline="middle" alignment-baseline="middle" class="messageText" dy="1em" style="font-size: 16px; font-weight: 400;">BLE Active Scan (1s)</text><line x1="78" y1="172" x2="362" y2="172" class="messageLine0" stroke-width="2" stroke="none" marker-end="url(#arrowhead)" style="fill: none;"></line><text x="223" y="187" text-anchor="middle" dominant-baseline="middle" alignment-baseline="middle" class="messageText" dy="1em" style="font-size: 16px; font-weight: 400;">广播包 (含 Manufacturer Data)</text><line x1="365" y1="228" x2="81" y2="228" class="messageLine1" stroke-width="2" stroke="none" marker-end="url(#arrowhead)" style="stroke-dasharray: 3, 3; fill: none;"></line><text x="220" y="345" text-anchor="middle" dominant-baseline="middle" alignment-baseline="middle" class="messageText" dy="1em" style="font-size: 16px; font-weight: 400;">GATT Connect (多策略重试)</text><line x1="78" y1="386" x2="362" y2="386" class="messageLine0" stroke-width="2" stroke="none" marker-end="url(#arrowhead)" style="fill: none;"></line><text x="223" y="401" text-anchor="middle" dominant-baseline="middle" alignment-baseline="middle" class="messageText" dy="1em" style="font-size: 16px; font-weight: 400;">连接建立</text><line x1="365" y1="442" x2="81" y2="442" class="messageLine1" stroke-width="2" stroke="none" marker-end="url(#arrowhead)" style="stroke-dasharray: 3, 3; fill: none;"></line><text x="220" y="457" text-anchor="middle" dominant-baseline="middle" alignment-baseline="middle" class="messageText" dy="1em" style="font-size: 16px; font-weight: 400;">discoverAttributes()</text><line x1="78" y1="498" x2="362" y2="498" class="messageLine0" stroke-width="2" stroke="none" marker-end="url(#arrowhead)" style="fill: none;"></line><text x="223" y="513" text-anchor="middle" dominant-baseline="middle" alignment-baseline="middle" class="messageText" dy="1em" style="font-size: 16px; font-weight: 400;">Services + Characteristics</text><line x1="365" y1="554" x2="81" y2="554" class="messageLine1" stroke-width="2" stroke="none" marker-end="url(#arrowhead)" style="stroke-dasharray: 3, 3; fill: none;"></line><text x="220" y="620" text-anchor="middle" dominant-baseline="middle" alignment-baseline="middle" class="messageText" dy="1em" style="font-size: 16px; font-weight: 400;">subscribe(notify)</text><line x1="78" y1="661" x2="362" y2="661" class="messageLine0" stroke-width="2" stroke="none" marker-end="url(#arrowhead)" style="fill: none;"></line><text x="223" y="676" text-anchor="middle" dominant-baseline="middle" alignment-baseline="middle" class="messageText" dy="1em" style="font-size: 16px; font-weight: 400;">CCCD 写入成功</text><line x1="365" y1="717" x2="81" y2="717" class="messageLine1" stroke-width="2" stroke="none" marker-end="url(#arrowhead)" style="stroke-dasharray: 3, 3; fill: none;"></line><text x="223" y="854" text-anchor="middle" dominant-baseline="middle" alignment-baseline="middle" class="messageText" dy="1em" style="font-size: 16px; font-weight: 400;">Notify 数据包 (&lt;=20 bytes)</text><line x1="365" y1="895" x2="81" y2="895" class="messageLine0" stroke-width="2" stroke="none" marker-end="url(#arrowhead)" style="fill: none;"></line><text x="220" y="1175" text-anchor="middle" dominant-baseline="middle" alignment-baseline="middle" class="messageText" dy="1em" style="font-size: 16px; font-weight: 400;">disconnect()</text><line x1="78" y1="1216" x2="362" y2="1216" class="messageLine0" stroke-width="2" stroke="none" marker-end="url(#arrowhead)" style="fill: none;"></line></svg></pre>
+    <figcaption>图 3：BLE 通信时序图</figcaption>
+  </figure>
+
+  <h3>连接重试策略</h3>
+  <p>由于 BLE 设备可能使用随机 MAC（RPA），连接过程采用多策略重试机制：</p>
+  <ol>
+    <li><strong>尝试 1</strong>：使用原始扫描地址（含字节序反转）</li>
+    <li><strong>尝试 2</strong>：1.5 秒快速重扫获取最新 MAC → 重试</li>
+    <li><strong>尝试 3</strong>：强制 addr_type=0（public）重试</li>
+    <li><strong>尝试 4</strong>：使用原始 LSB-first 字节（不反转）重试</li>
+    <li><strong>尝试 5</strong>：原始 LSB-first + type=0 最终兜底</li>
+  </ol>
+
+  <h3>帧重组机制</h3>
+  <div class="callout warn">
+    <p><strong>关键设计：</strong>BLE Notify 在 MTU=23 时单次最多传输 20 字节，而一帧完整数据（11 个数值 + 逗号 + 分号）约 53 字节，会被拆分为 3 次 Notify。系统在 <code>ble_manager_process_data()</code> 中维护 128 字节帧缓冲区，逐字符拼接，遇到帧尾 <code>';'</code> 时输出完整帧交给上层解析。缓冲区溢出时丢弃半帧重新同步。</p>
+  </div>
+</section>
+
+<!-- ============ 6. PWM控制逻辑 ============ -->
+<section>
+  <h2><span class="num">06</span>PWM 控制逻辑</h2>
+
+  <h3>输出映射规则</h3>
+  <p>6 路 PWM 通道的输出脉宽由 BLE 输入值按阈值映射决定，CH6 由 CH1 输入值派生：</p>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>通道</th><th>引脚</th><th>输入来源</th><th>阈值判断</th><th>高输出</th><th>低输出</th><th>默认值</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>CH1</td><td>GPIO3</td><td>values[0]</td><td>&gt; 0650 ?</td><td>2000us</td><td>1000us</td><td>1000us</td></tr>
+        <tr><td>CH2</td><td>GPIO5</td><td>values[1]</td><td>&gt; 0650 ?</td><td>2000us</td><td>1000us</td><td>1000us</td></tr>
+        <tr><td>CH3</td><td>GPIO6</td><td>values[2]</td><td>&gt; 0650 ?</td><td>2000us</td><td>1000us</td><td>1000us</td></tr>
+        <tr><td>CH4</td><td>GPIO7</td><td>values[3]</td><td>&gt; 0650 ?</td><td>2000us</td><td>1000us</td><td>1000us</td></tr>
+        <tr><td>CH5</td><td>GPIO8</td><td>values[4]</td><td>&gt; 0650 ?</td><td>2000us</td><td>1000us</td><td>1000us</td></tr>
+        <tr><td>CH6</td><td>GPIO2</td><td>values[0] (CH1输入值)</td><td>&gt; 0650 ?</td><td>1750us</td><td>1400us</td><td>1400us</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="callout">
+    <p><strong>CH6 特殊说明：</strong>CH6 的输出基于 CH1 的<strong>输入值</strong>（values[0]）而非输出值。这意味着点击 CH1 格子启用覆盖时，CH1 输出变为 1500us，但 CH6 仍根据 CH1 的原始 BLE 输入值正常映射，不受覆盖影响。</p>
+  </div>
+
+  <h3>控制优先级</h3>
+  <p>PWM 输出遵循严格的优先级层次，高优先级覆盖低优先级：</p>
+
+  <figure class="diagram">
+    <pre class="mermaid" data-processed="true"><svg id="mermaid-1787034973855" width="100%" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" class="flowchart" style="max-width: 721.2999877929688px;" viewBox="0 0 721.2999877929688 934.7999877929688" role="graphics-document document" aria-roledescription="flowchart-v2"><style>#mermaid-1787034973855{font-family:"trebuchet ms",verdana,arial,sans-serif;font-size:16px;fill:#000000;}#mermaid-1787034973855 .error-icon{fill:#552222;}#mermaid-1787034973855 .error-text{fill:#552222;stroke:#552222;}#mermaid-1787034973855 .edge-thickness-normal{stroke-width:1px;}#mermaid-1787034973855 .edge-thickness-thick{stroke-width:3.5px;}#mermaid-1787034973855 .edge-pattern-solid{stroke-dasharray:0;}#mermaid-1787034973855 .edge-thickness-invisible{stroke-width:0;fill:none;}#mermaid-1787034973855 .edge-pattern-dashed{stroke-dasharray:3;}#mermaid-1787034973855 .edge-pattern-dotted{stroke-dasharray:2;}#mermaid-1787034973855 .marker{fill:#666;stroke:#666;}#mermaid-1787034973855 .marker.cross{stroke:#666;}#mermaid-1787034973855 svg{font-family:"trebuchet ms",verdana,arial,sans-serif;font-size:16px;}#mermaid-1787034973855 p{margin:0;}#mermaid-1787034973855 .label{font-family:"trebuchet ms",verdana,arial,sans-serif;color:#000000;}#mermaid-1787034973855 .cluster-label text{fill:#333;}#mermaid-1787034973855 .cluster-label span{color:#333;}#mermaid-1787034973855 .cluster-label span p{background-color:transparent;}#mermaid-1787034973855 .label text,#mermaid-1787034973855 span{fill:#000000;color:#000000;}#mermaid-1787034973855 .node rect,#mermaid-1787034973855 .node circle,#mermaid-1787034973855 .node ellipse,#mermaid-1787034973855 .node polygon,#mermaid-1787034973855 .node path{fill:#eee;stroke:#999;stroke-width:1px;}#mermaid-1787034973855 .rough-node .label text,#mermaid-1787034973855 .node .label text,#mermaid-1787034973855 .image-shape .label,#mermaid-1787034973855 .icon-shape .label{text-anchor:middle;}#mermaid-1787034973855 .node .katex path{fill:#000;stroke:#000;stroke-width:1px;}#mermaid-1787034973855 .rough-node .label,#mermaid-1787034973855 .node .label,#mermaid-1787034973855 .image-shape .label,#mermaid-1787034973855 .icon-shape .label{text-align:center;}#mermaid-1787034973855 .node.clickable{cursor:pointer;}#mermaid-1787034973855 .root .anchor path{fill:#666!important;stroke-width:0;stroke:#666;}#mermaid-1787034973855 .arrowheadPath{fill:#333333;}#mermaid-1787034973855 .edgePath .path{stroke:#666;stroke-width:2.0px;}#mermaid-1787034973855 .flowchart-link{stroke:#666;fill:none;}#mermaid-1787034973855 .edgeLabel{background-color:white;text-align:center;}#mermaid-1787034973855 .edgeLabel p{background-color:white;}#mermaid-1787034973855 .edgeLabel rect{opacity:0.5;background-color:white;fill:white;}#mermaid-1787034973855 .labelBkg{background-color:rgba(255, 255, 255, 0.5);}#mermaid-1787034973855 .cluster rect{fill:hsl(0, 0%, 98.9215686275%);stroke:#707070;stroke-width:1px;}#mermaid-1787034973855 .cluster text{fill:#333;}#mermaid-1787034973855 .cluster span{color:#333;}#mermaid-1787034973855 div.mermaidTooltip{position:absolute;text-align:center;max-width:200px;padding:2px;font-family:"trebuchet ms",verdana,arial,sans-serif;font-size:12px;background:hsl(-160, 0%, 93.3333333333%);border:1px solid #707070;border-radius:2px;pointer-events:none;z-index:100;}#mermaid-1787034973855 .flowchartTitleText{text-anchor:middle;font-size:18px;fill:#000000;}#mermaid-1787034973855 rect.text{fill:none;stroke-width:0;}#mermaid-1787034973855 .icon-shape,#mermaid-1787034973855 .image-shape{background-color:white;text-align:center;}#mermaid-1787034973855 .icon-shape p,#mermaid-1787034973855 .image-shape p{background-color:white;padding:2px;}#mermaid-1787034973855 .icon-shape rect,#mermaid-1787034973855 .image-shape rect{opacity:0.5;background-color:white;fill:white;}#mermaid-1787034973855 :root{--mermaid-font-family:"trebuchet ms",verdana,arial,sans-serif;}</style><g><marker id="mermaid-1787034973855_flowchart-v2-pointEnd" class="marker flowchart-v2" viewBox="0 0 10 10" refX="5" refY="5" markerUnits="userSpaceOnUse" markerWidth="8" markerHeight="8" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></path></marker><marker id="mermaid-1787034973855_flowchart-v2-pointStart" class="marker flowchart-v2" viewBox="0 0 10 10" refX="4.5" refY="5" markerUnits="userSpaceOnUse" markerWidth="8" markerHeight="8" orient="auto"><path d="M 0 5 L 10 10 L 10 0 z" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></path></marker><marker id="mermaid-1787034973855_flowchart-v2-circleEnd" class="marker flowchart-v2" viewBox="0 0 10 10" refX="11" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><circle cx="5" cy="5" r="5" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></circle></marker><marker id="mermaid-1787034973855_flowchart-v2-circleStart" class="marker flowchart-v2" viewBox="0 0 10 10" refX="-1" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><circle cx="5" cy="5" r="5" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></circle></marker><marker id="mermaid-1787034973855_flowchart-v2-crossEnd" class="marker cross flowchart-v2" viewBox="0 0 11 11" refX="12" refY="5.2" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><path d="M 1,1 l 9,9 M 10,1 l -9,9" class="arrowMarkerPath" style="stroke-width: 2; stroke-dasharray: 1, 0;"></path></marker><marker id="mermaid-1787034973855_flowchart-v2-crossStart" class="marker cross flowchart-v2" viewBox="0 0 11 11" refX="-1" refY="5.2" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><path d="M 1,1 l 9,9 M 10,1 l -9,9" class="arrowMarkerPath" style="stroke-width: 2; stroke-dasharray: 1, 0;"></path></marker><g class="root"><g class="clusters"></g><g class="edgePaths"><path d="M186.296,118.196L171.247,130.997C156.198,143.798,126.099,169.399,111.049,203.566C96,237.733,96,280.467,96,301.833L96,323.2" id="L_A_ESTOP_0" class=" edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="" marker-end="url(#mermaid-1787034973855_flowchart-v2-pointEnd)"></path><path d="M266.904,118.196L281.786,130.997C296.669,143.798,326.435,169.399,341.392,187.783C356.349,206.167,356.498,217.334,356.572,222.917L356.647,228.5" id="L_A_B_1" class=" edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="" marker-end="url(#mermaid-1787034973855_flowchart-v2-pointEnd)"></path><path d="M299.068,419.268L284.906,434.956C270.745,450.645,242.423,482.023,228.261,519.411C214.1,556.8,214.1,600.2,214.1,621.9L214.1,643.6" id="L_B_GESTURE_2" class=" edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="" marker-end="url(#mermaid-1787034973855_flowchart-v2-pointEnd)"></path><path d="M414.332,419.268L428.327,434.956C442.322,450.645,470.311,482.023,484.38,503.295C498.449,524.567,498.598,535.734,498.672,541.317L498.747,546.9" id="L_B_C_3" class=" edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="" marker-end="url(#mermaid-1787034973855_flowchart-v2-pointEnd)"></path><path d="M447.087,747.587L436.456,762.29C425.825,776.992,404.562,806.396,393.931,826.598C383.3,846.8,383.3,857.8,383.3,863.3L383.3,868.8" id="L_C_OVR_4" class=" edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="" marker-end="url(#mermaid-1787034973855_flowchart-v2-pointEnd)"></path><path d="M550.513,747.587L560.977,762.29C571.442,776.992,592.371,806.396,602.835,826.598C613.3,846.8,613.3,857.8,613.3,863.3L613.3,868.8" id="L_C_AUTO_5" class=" edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="" marker-end="url(#mermaid-1787034973855_flowchart-v2-pointEnd)"></path></g><g class="edgeLabels"><g class="edgeLabel" transform="translate(96, 195)"><g class="label" transform="translate(-8, -12)"><foreignobject width="16" height="24"><div xmlns="http://www.w3.org/1999/xhtml" class="labelBkg" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="edgeLabel "><p>是</p></span></div></foreignobject></g></g><g class="edgeLabel" transform="translate(356.2000045776367, 195)"><g class="label" transform="translate(-8, -12)"><foreignobject width="16" height="24"><div xmlns="http://www.w3.org/1999/xhtml" class="labelBkg" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="edgeLabel "><p>否</p></span></div></foreignobject></g></g><g class="edgeLabel" transform="translate(214.10000228881836, 513.4000091552734)"><g class="label" transform="translate(-8, -12)"><foreignobject width="16" height="24"><div xmlns="http://www.w3.org/1999/xhtml" class="labelBkg" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="edgeLabel "><p>是</p></span></div></foreignobject></g></g><g class="edgeLabel" transform="translate(498.3000068664551, 513.4000091552734)"><g class="label" transform="translate(-8, -12)"><foreignobject width="16" height="24"><div xmlns="http://www.w3.org/1999/xhtml" class="labelBkg" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="edgeLabel "><p>否</p></span></div></foreignobject></g></g><g class="edgeLabel" transform="translate(383.3000068664551, 835.8000183105469)"><g class="label" transform="translate(-8, -12)"><foreignobject width="16" height="24"><div xmlns="http://www.w3.org/1999/xhtml" class="labelBkg" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="edgeLabel "><p>是</p></span></div></foreignobject></g></g><g class="edgeLabel" transform="translate(613.3000068664551, 835.8000183105469)"><g class="label" transform="translate(-8, -12)"><foreignobject width="16" height="24"><div xmlns="http://www.w3.org/1999/xhtml" class="labelBkg" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="edgeLabel "><p>否</p></span></div></foreignobject></g></g></g><g class="nodes"><g class="node default  " id="flowchart-A-71" transform="translate(226.10000228881836, 83)"><polygon points="75,0 150,-75 75,-150 0,-75" class="label-container" transform="translate(-75,75)"></polygon><g class="label" style="" transform="translate(-48, -12)"><rect></rect><foreignobject width="96" height="24"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="nodeLabel "><p>急停 s_estop?</p></span></div></foreignobject></g></g><g class="node default  " id="flowchart-ESTOP-72" transform="translate(96, 354.2000045776367)"><rect class="basic label-container" style="fill:#FFEBEE !important;stroke:#FF3B30 !important;stroke-width:2px !important" x="-88" y="-27" width="176" height="54"></rect><g class="label" style="" transform="translate(-58, -12)"><rect></rect><foreignobject width="116" height="24"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="nodeLabel "><p>所有通道  1500us</p></span></div></foreignobject></g></g><g class="node default  " id="flowchart-B-74" transform="translate(356.2000045776367, 354.2000045776367)"><polygon points="122.20000457763672,0 244.40000915527344,-122.20000457763672 122.20000457763672,-244.40000915527344 0,-122.20000457763672" class="label-container" transform="translate(-122.20000457763672,122.20000457763672)"></polygon><g class="label" style="" transform="translate(-95.20000457763672, -12)"><rect></rect><foreignobject width="190.40000915527344" height="24"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="nodeLabel "><p>手势模式 s_gesture_mode?</p></span></div></foreignobject></g></g><g class="node default  " id="flowchart-GESTURE-76" transform="translate(214.10000228881836, 674.6000137329102)"><rect class="basic label-container" style="fill:#F3E5F5 !important;stroke:#9C27B0 !important" x="-110" y="-27" width="220" height="54"></rect><g class="label" style="" transform="translate(-80, -12)"><rect></rect><foreignobject width="160" height="24"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="nodeLabel "><p>按 s_gesture_us[] 输出</p></span></div></foreignobject></g></g><g class="node default  " id="flowchart-C-78" transform="translate(498.3000068664551, 674.6000137329102)"><polygon points="124.20000457763672,0 248.40000915527344,-124.20000457763672 124.20000457763672,-248.40000915527344 0,-124.20000457763672" class="label-container" transform="translate(-124.20000457763672,124.20000457763672)"></polygon><g class="label" style="" transform="translate(-97.20000457763672, -12)"><rect></rect><foreignobject width="194.40000915527344" height="24"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="nodeLabel "><p>单通道覆盖 s_override[ch]?</p></span></div></foreignobject></g></g><g class="node default  " id="flowchart-OVR-80" transform="translate(383.3000068664551, 899.8000183105469)"><rect class="basic label-container" style="fill:#FFF3E0 !important;stroke:#FF9500 !important" x="-80" y="-27" width="160" height="54"></rect><g class="label" style="" transform="translate(-50, -12)"><rect></rect><foreignobject width="100" height="24"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="nodeLabel "><p>该通道  1500us</p></span></div></foreignobject></g></g><g class="node default  " id="flowchart-AUTO-82" transform="translate(613.3000068664551, 899.8000183105469)"><rect class="basic label-container" style="fill:#E8F5E9 !important;stroke:#34C759 !important" x="-100" y="-27" width="200" height="54"></rect><g class="label" style="" transform="translate(-70, -12)"><rect></rect><foreignobject width="140" height="24"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5; max-width: 200px; text-align: center;"><span class="nodeLabel "><p>自动映射 BLE CH 值</p></span></div></foreignobject></g></g></g></g></g></svg></pre>
+    <figcaption>图 4：PWM 控制优先级决策图</figcaption>
+  </figure>
+
+  <h3>PWM 硬件参数</h3>
+  <ul>
+    <li><strong>频率</strong>：50Hz（周期 20000us），标准舵机/ESC PWM 频率</li>
+    <li><strong>分辨率</strong>：16bit（65536 级），1us ≈ 3.2768 ticks</li>
+    <li><strong>脉宽范围</strong>：1000~2000us（标准舵机控制范围）</li>
+    <li><strong>优化</strong>：仅在脉宽变化时写 LEDC 寄存器，减少硬件访问</li>
+  </ul>
+</section>
+
+<!-- ============ 7. 技术规格 ============ -->
+<section>
+  <h2><span class="num">07</span>技术规格汇总</h2>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>项目</th><th>规格</th><th>说明</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>主控芯片</td><td>ESP32-S3</td><td>双核 Xtensa LX7, BLE 5.0</td></tr>
+        <tr><td>显示屏</td><td>SH8601 AMOLED</td><td>280×456, 16-bit RGB565, SPI 4-wire</td></tr>
+        <tr><td>触摸</td><td>FT3168 电容触摸</td><td>I2C, 地址 0x38</td></tr>
+        <tr><td>UI 框架</td><td>LVGL v8</td><td>单缓冲, buf height = V_RES/8</td></tr>
+        <tr><td>BLE 协议栈</td><td>NimBLE</td><td>主动扫描, MTU=256</td></tr>
+        <tr><td>开发框架</td><td>Arduino-ESP32 3.x</td><td>FreeRTOS 多任务</td></tr>
+        <tr><td>PWM 通道</td><td>6 路 (LEDC)</td><td>50Hz / 16bit, GPIO 2,3,5,6,7,8</td></tr>
+        <tr><td>数据通道</td><td>11 路</td><td>BLE Notify, 帧尾 ';' 分隔</td></tr>
+        <tr><td>刷新频率</td><td>~20Hz</td><td>主循环 50ms 周期</td></tr>
+        <tr><td>UI 屏幕数</td><td>6 个</td><td>主屏/列表/UUID/数据/PWM/手势</td></tr>
+        <tr><td>手势数量</td><td>12 种</td><td>1-8/10, ok, good, love</td></tr>
+        <tr><td>扫描设备上限</td><td>20 台</td><td>BLE_SCAN_RESULT_MAX</td></tr>
+        <tr><td>消息队列</td><td>20 条</td><td>FreeRTOS Queue, ISR 安全</td></tr>
+        <tr><td>连接任务栈</td><td>16384 字节</td><td>独立 FreeRTOS 任务</td></tr>
+        <tr><td>LVGL 任务栈</td><td>4096 字节</td><td>优先级 2</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="callout danger">
+    <p><strong>安全提示：</strong>系统具备三层安全机制 — 全局急停按钮（所有通道 1500us）、单通道手动覆盖（单指暂停 1500us）、以及上电默认低脉宽输出（避免舵机上电抖动）。急停优先级最高，覆盖手势模式和单通道覆盖。</p>
+  </div>
+</section>
+
+</div><!-- /container -->
+
+<footer>
+  <p>ESP32-S3 BLE LVGL 显示屏程序功能说明书 | 穿戴康复外骨骼机械手项目 | 2026-08-05</p>
+</footer>
+
+<script src="./ESP32-S3 BLE LVGL 显示屏程序功能说明书_files/mermaid.min.js"></script>
+<script>
+  mermaid.initialize({ startOnLoad: true, theme: 'neutral', securityLevel: 'loose' });
+</script>
+
+
+
+<div class="mermaidTooltip" style="opacity: 0;"></div></body></html>

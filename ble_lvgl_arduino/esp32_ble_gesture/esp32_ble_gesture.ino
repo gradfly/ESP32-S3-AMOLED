@@ -113,17 +113,19 @@ void loop()
     /* 检查手势行程定时是否到期（到期则 6 路回归 1500us + 通知 UI） */
     pwm_manager_tick();
 
-    /* 有新帧时统一刷新一次 UI（数值网格 + 原始帧）+ 更新 PWM 输出 */
+    /* 有新帧时优先输出 PWM，再刷新 UI。
+     * PWM 写硬件不依赖 LVGL 锁，放在 UI 更新之前可避免 LVGL 渲染
+     * 阻塞导致舵机延迟（屏幕显示正常但舵机很久才动）。 */
     if (s_data_dirty) {
         s_data_dirty = false;
+        /* 优先输出 PWM，不受后续 UI 渲染阻塞影响 */
+        pwm_manager_update(s_latest_values, s_latest_value_count);
         ui_update_data_values(s_latest_values, s_latest_value_count);
         ui_append_data((const uint8_t *)s_latest_raw, s_latest_raw_len);
         /* PWM 屏：显示 CH1~CH5 输入值 + 对应输出脉宽 */
         ui_update_pwm_values(s_latest_values, s_latest_value_count);
         /* 手势识别屏：根据前 5 路数据匹配并显示手势图形 */
         ui_update_gesture_recv(s_latest_values, s_latest_value_count);
-        /* 用 CH1~CH5（索引 0~4）驱动 5 路 PWM 硬件输出 */
-        pwm_manager_update(s_latest_values, s_latest_value_count);
     }
 
     static ble_state_t last_state = BLE_STATE_IDLE;
