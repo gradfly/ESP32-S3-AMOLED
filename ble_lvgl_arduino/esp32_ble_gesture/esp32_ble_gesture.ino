@@ -118,14 +118,17 @@ void loop()
      * 阻塞导致舵机延迟（屏幕显示正常但舵机很久才动）。 */
     if (s_data_dirty) {
         s_data_dirty = false;
-        /* 优先输出 PWM，不受后续 UI 渲染阻塞影响 */
+        /* 手势识别屏：优先匹配手势并切换 PWM。
+         * 手势模式下 pwm_manager_update(values) 会跳过手势通道，
+         * PWM 输出完全由 ui_update_gesture_recv 内部调用
+         * pwm_manager_set_gesture_outputs_timed() 驱动，确保实时切换。 */
+        ui_update_gesture_recv(s_latest_values, s_latest_value_count);
+        /* 非手势模式(自动映射)时输出 PWM；手势模式时跳过手势通道 */
         pwm_manager_update(s_latest_values, s_latest_value_count);
         ui_update_data_values(s_latest_values, s_latest_value_count);
         ui_append_data((const uint8_t *)s_latest_raw, s_latest_raw_len);
         /* PWM 屏：显示 CH1~CH5 输入值 + 对应输出脉宽 */
         ui_update_pwm_values(s_latest_values, s_latest_value_count);
-        /* 手势识别屏：根据前 5 路数据匹配并显示手势图形 */
-        ui_update_gesture_recv(s_latest_values, s_latest_value_count);
     }
 
     static ble_state_t last_state = BLE_STATE_IDLE;

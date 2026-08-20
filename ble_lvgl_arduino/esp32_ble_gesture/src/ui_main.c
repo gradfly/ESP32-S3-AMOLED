@@ -1452,16 +1452,16 @@ void ui_update_state(ble_state_t state, const char *message)
     case BLE_STATE_CONNECTED:
         /* 区分两种连接模式：
          *   1) ESP32 作为 Client 去连接外设 → message="Connected" → 跳数据屏（旧行为）
-         *   2) 手机小程序作为 Client 连接 ESP32 → message="Phone Connected" → 不跳屏，
-         *      保留在首页显示 "Phone Connected" 提示，用户可手动滑到数据/PWM 屏 */
+         *   2) 手机小程序作为 Client 连接 ESP32 → message="BLE Connected" → 不跳屏，
+         *      保留在首页显示 "BLE Connected" 提示，用户可手动滑到数据/PWM 屏 */
         {
-            bool is_phone_connect = (message && strstr(message, "Phone") != NULL);
-            if (is_phone_connect) {
-                /* 小程序连接：设置 connected_name 为 "Phone"，
-                 * 后续进入数据/PWM 屏时顶部会显示 "Connected: Phone" */
-                strncpy(s_connected_name, "Phone", sizeof(s_connected_name) - 1);
+            bool is_ble_connect = (message && strstr(message, "BLE") != NULL);
+            if (is_ble_connect) {
+                /* 小程序连接：设置 connected_name 为 "BLE"，
+                 * 后续进入数据/PWM 屏时顶部会显示 "Connected: BLE" */
+                strncpy(s_connected_name, "BLE", sizeof(s_connected_name) - 1);
                 s_connected_name[sizeof(s_connected_name) - 1] = '\0';
-                /* 不跳屏：停留在首页显示 "Phone Connected" 成功提示 */
+                /* 不跳屏：停留在首页显示 "BLE Connected" 成功提示 */
                 refresh_active_screen_status();
                 /* 清空旧数据：即便未跳屏，后续滑动进入时也是干净状态 */
                 ui_clear_data();
@@ -1479,11 +1479,11 @@ void ui_update_state(ble_state_t state, const char *message)
     case BLE_STATE_DISCONNECTED:
         s_connected_name[0] = '\0';
         /* 同样区分两种断开：
-         *   小程序断开 → message="Phone Disconnected" → 停在当前屏刷新状态
+         *   小程序断开 → message="BLE Disconnected" → 停在当前屏刷新状态
          *   外设断开 → message="Disconnected"         → 强制返回首页（旧行为） */
         {
-            bool is_phone_disconnect = (message && strstr(message, "Phone") != NULL);
-            if (is_phone_disconnect) {
+            bool is_ble_disconnect = (message && strstr(message, "BLE") != NULL);
+            if (is_ble_disconnect) {
                 /* 小程序断开：刷新当前屏状态，不跳回首页
                  * （用户可能刚切到数据屏想看历史，直接跳回会很突兀） */
                 refresh_active_screen_status();
@@ -1848,6 +1848,73 @@ void ui_clear_pwm(void)
 
 void ui_update_gesture_recv(const int16_t *values, uint8_t count)
 {
+    /* Phase 1: 手势匹配 + PWM 切换（不获取 LVGL 互斥锁）。
+     * 尽早执行，确保手势变化时 PWM 立即切换，不受 LVGL 渲染阻塞影响。
+     * lv_scr_act() 是指针读取，虽理论上需 LVGL 锁但实际为原子操作，
+     * 最坏情况是读到过期值导致一次多余匹配，不影响正确性。
+     * PWM 函数（pwm_manager_set_gesture_outputs_timed 等）内部用
+     * 递归互斥锁保护，无需 LVGL 锁。 */
+    int matched = -1;
+    bool on_screen = (lv_scr_act() == s_screen_gesture_recv);
+
+    if (on_screen && pwm_manager_get_gesture_mode()) {
+        s_recv_gesture_mode = true;
+
+        if (!values || count < 5) {
+            /* 数据不足：若上次有匹配，PWM 回归中位 */
+            if (s_last_recv_matched != -1) {
+                static const uint16_t mid[PWM_CHANNEL_COUNT] = {
+                    PWM_OUT_MID_US, PWM_OUT_MID_US, PWM_OUT_MID_US,
+                    PWM_OUT_MID_US, PWM_OUT_MID_US, PWM_OUT_MID_US
+                };
+                pwm_manager_set_gesture_outputs_timed(mid, PWM_CHANNEL_COUNT, true);
+                s_last_recv_matched = -1;
+            }
+        } else {
+            /* 计算 5 位模式 */
+            bool pattern[5];
+            for (int i = 0; i < 5; i++) {
+                pattern[i] = (values[i] < GESTURE_RECV_THRESHOLD);
+            }
+
+            /* 查找匹配的手势 */
+            for (int i = 0; i < GESTURE_RECV_MAP_SIZE; i++) {
+                bool match = true;
+                for (int j = 0; j < 5; j++) {
+                    if (s_gesture_recv_map[i].pattern[j] != pattern[j]) {
+                        match = false;
+                        break;
+                    }
+                }
+                if (match) { matched = i; break; }
+            }
+
+            /* 匹配结果变化时立即切换 PWM（取消旧定时，启动新定时），
+             * 确保手势切换时舵机立即响应，不等旧手势行程结束。 */
+            if (matched != s_last_recv_matched) {
+                s_last_recv_matched = matched;
+                if (matched >= 0) {
+                    for (uint8_t i = 0; i < GESTURE_COUNT; i++) {
+                        if (s_gestures[i].img == s_gesture_recv_map[matched].img) {
+                            uint16_t remapped[PWM_CHANNEL_COUNT];
+                            remap_gesture_pwm(s_gestures[i].pwm, remapped);
+                            pwm_manager_set_gesture_outputs_timed(remapped, PWM_CHANNEL_COUNT, false);
+                            break;
+                        }
+                    }
+                } else {
+                    static const uint16_t mid[PWM_CHANNEL_COUNT] = {
+                        PWM_OUT_MID_US, PWM_OUT_MID_US, PWM_OUT_MID_US,
+                        PWM_OUT_MID_US, PWM_OUT_MID_US, PWM_OUT_MID_US
+                    };
+                    pwm_manager_set_gesture_outputs_timed(mid, PWM_CHANNEL_COUNT, true);
+                }
+            }
+        }
+    }
+
+    /* Phase 2: UI 更新（需要 LVGL 互斥锁）。
+     * 仅更新可见 UI 对象，不影响 PWM 输出（PWM 已在 Phase 1 切换）。 */
     SemaphoreHandle_t mux = get_lvgl_mutex();
     if (!mux) return;
     if (xSemaphoreTakeRecursive(mux, pdMS_TO_TICKS(100)) != pdTRUE) return;
@@ -1860,8 +1927,8 @@ void ui_update_gesture_recv(const int16_t *values, uint8_t count)
         return;
     }
 
-    /* 确保手势模式开启（断连等事件可能将其关闭），
-     * 手势模式下 pwm_manager_update 会读取 s_gesture_us 输出对应脉宽 */
+    /* 确保手势模式开启（Phase 1 可能因模式未开启而跳过匹配，
+     * 此处开启后下帧 Phase 1 即可正常匹配） */
     if (!pwm_manager_get_gesture_mode()) {
         pwm_manager_set_gesture_mode(true);
     }
@@ -1873,48 +1940,23 @@ void ui_update_gesture_recv(const int16_t *values, uint8_t count)
         if (s_gesture_recv_name) lv_label_set_text(s_gesture_recv_name, "Waiting...");
         if (s_gesture_recv_values) lv_label_set_text(s_gesture_recv_values,
             "CH1:----  CH2:----  CH3:----\nCH4:----  CH5:----\nPattern: - - - - -");
-        /* 无数据时 PWM 回归中位（rest_pose=true 不启动行程定时） */
-        if (s_last_recv_matched != -1) {
-            static const uint16_t mid[PWM_CHANNEL_COUNT] = {
-                PWM_OUT_MID_US, PWM_OUT_MID_US, PWM_OUT_MID_US,
-                PWM_OUT_MID_US, PWM_OUT_MID_US, PWM_OUT_MID_US
-            };
-            pwm_manager_set_gesture_outputs_timed(mid, PWM_CHANNEL_COUNT, true);
-            s_last_recv_matched = -1;
-        }
         xSemaphoreGiveRecursive(mux);
         return;
     }
 
-    /* 计算 5 位模式并构建显示文本 */
-    bool pattern[5];
+    /* 构建 CH 值显示文本 */
     char val_buf[96];
     int pat_bits[5];
-
     for (int i = 0; i < 5; i++) {
-        pattern[i] = (values[i] < GESTURE_RECV_THRESHOLD);
-        pat_bits[i] = pattern[i] ? 1 : 0;
+        pat_bits[i] = (values[i] < GESTURE_RECV_THRESHOLD) ? 1 : 0;
     }
-
     snprintf(val_buf, sizeof(val_buf),
              "CH1:%d  CH2:%d  CH3:%d\nCH4:%d  CH5:%d\nPattern: %d %d %d %d %d",
              values[0], values[1], values[2], values[3], values[4],
              pat_bits[0], pat_bits[1], pat_bits[2], pat_bits[3], pat_bits[4]);
 
-    /* 查找匹配的手势 */
-    int matched = -1;
-    for (int i = 0; i < GESTURE_RECV_MAP_SIZE; i++) {
-        bool match = true;
-        for (int j = 0; j < 5; j++) {
-            if (s_gesture_recv_map[i].pattern[j] != pattern[j]) {
-                match = false;
-                break;
-            }
-        }
-        if (match) { matched = i; break; }
-    }
-
-    /* 更新图片和名称 */
+    /* 更新图片和名称（matched 在 Phase 1 计算；若 Phase 1 未执行则 matched=-1 显示 No Match，
+     * 下帧 Phase 1 匹配后自动修正） */
     if (matched >= 0) {
         if (s_gesture_recv_img) {
             lv_obj_clear_flag(s_gesture_recv_img, LV_OBJ_FLAG_HIDDEN);
@@ -1928,29 +1970,6 @@ void ui_update_gesture_recv(const int16_t *values, uint8_t count)
     } else {
         if (s_gesture_recv_img) lv_obj_add_flag(s_gesture_recv_img, LV_OBJ_FLAG_HIDDEN);
         if (s_gesture_recv_name) lv_label_set_text(s_gesture_recv_name, "No Match");
-    }
-
-    /* 匹配结果变化时输出对应 PWM（避免每帧重复刷新硬件）
-     * 通过图片指针在 s_gestures 中查找对应 6 路脉宽，
-     * 经力度重映射后按行程时间定时输出（到期后自动回归 1500us） */
-    if (matched != s_last_recv_matched) {
-        s_last_recv_matched = matched;
-        if (matched >= 0) {
-            for (uint8_t i = 0; i < GESTURE_COUNT; i++) {
-                if (s_gestures[i].img == s_gesture_recv_map[matched].img) {
-                    uint16_t remapped[PWM_CHANNEL_COUNT];
-                    remap_gesture_pwm(s_gestures[i].pwm, remapped);
-                    pwm_manager_set_gesture_outputs_timed(remapped, PWM_CHANNEL_COUNT, false);
-                    break;
-                }
-            }
-        } else {
-            static const uint16_t mid[PWM_CHANNEL_COUNT] = {
-                PWM_OUT_MID_US, PWM_OUT_MID_US, PWM_OUT_MID_US,
-                PWM_OUT_MID_US, PWM_OUT_MID_US, PWM_OUT_MID_US
-            };
-            pwm_manager_set_gesture_outputs_timed(mid, PWM_CHANNEL_COUNT, true);
-        }
     }
 
     if (s_gesture_recv_values) {

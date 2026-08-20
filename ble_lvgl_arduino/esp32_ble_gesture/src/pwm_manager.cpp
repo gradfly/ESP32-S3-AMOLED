@@ -202,7 +202,12 @@ void pwm_manager_update(const int16_t *values, uint8_t count)
             us = PWM_OUT_MID_US;        /* 急停：1500us，所有通道 */
             tag = "[ESTOP]";
         } else if (s_gesture_mode) {
-            us = s_gesture_us[i];       /* 手势模式：直接指定脉宽 */
+            /* 手势模式下，PWM 输出由 pwm_manager_set_gesture_outputs_timed() 独占管理。
+             * 主循环传入 BLE 数据(values!=NULL)时跳过本通道，避免输出旧的
+             * s_gesture_us[] 覆盖刚由手势匹配写入的新值。
+             * NULL 调用(来自 set_gesture_outputs)才实际写硬件。 */
+            if (values) continue;
+            us = s_gesture_us[i];
             tag = "[GESTURE]";
         } else if (s_override[i]) {
             us = PWM_OUT_MID_US;        /* 单通道覆盖：1500us */
