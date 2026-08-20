@@ -57,6 +57,13 @@ static bool s_gesture_timed = false;
 static uint32_t s_gesture_deadline_ms = 0;
 static pwm_gesture_expired_cb_t s_expired_cb = NULL;
 
+/* CH1-CH5 中位过渡：手势切换时，值变化的通道先输出 1500us 维持 50ms，
+ * 再输出目标值。CH6 不受此机制影响，始终立即输出。 */
+#define GESTURE_TRANSITION_MS  50
+static uint16_t s_gesture_pending_us[PWM_DIRECT_CH_COUNT] = {0};
+static bool     s_gesture_pending[PWM_DIRECT_CH_COUNT] = {false};
+static uint32_t s_gesture_pending_deadline_ms = 0;
+
 /* 递归互斥锁：保护 s_gesture_us[] / s_gesture_timed 等共享状态。
  * LVGL 任务（手势点击回调）与主循环（pwm_manager_tick 定时到期）
  * 在 ESP32-S3 双核上并发运行，若不加锁，定时到期会将 s_gesture_us[]
@@ -135,6 +142,10 @@ void pwm_manager_set_estop(bool on)
         for (uint8_t i = 0; i < PWM_CHANNEL_COUNT; i++) {
             s_pwm_us[i] = 0;
         }
+        /* 清除中位过渡 pending */
+        for (uint8_t i = 0; i < PWM_DIRECT_CH_COUNT; i++) {
+            s_gesture_pending[i] = false;
+        }
         ESP_LOGI(TAG, "E-STOP %s -> all channels 1500us", on ? "ON" : "OFF");
     }
 }
@@ -146,9 +157,13 @@ bool pwm_manager_get_estop(void)
 
 void pwm_manager_set_gesture_mode(bool on)
 {
-    pwm_lock();
-    if (s_gesture_mode == on) { pwm_unlock(); return; }
+    //pwm_lock();
+    //if (s_gesture_mode == on) { pwm_unlock(); return; }
     s_gesture_mode = on;
+    //清除pending状态
+    for (uint8_t i = 0; i < PWM_DIRECT_CH_COUNT; i++) {
+        s_gesture_pending[i] = false;
+    }
     if (on) {
         /* 进入手势模式：保留当前输出，避免舵机突变 */
         for (uint8_t i = 0; i < PWM_CHANNEL_COUNT; i++) {
@@ -159,7 +174,7 @@ void pwm_manager_set_gesture_mode(bool on)
     for (uint8_t i = 0; i < PWM_CHANNEL_COUNT; i++) {
         s_pwm_us[i] = 0;
     }
-    pwm_unlock();
+    //pwm_unlock();
     ESP_LOGI(TAG, "Gesture mode %s", on ? "ON" : "OFF");
 }
 
@@ -177,14 +192,17 @@ void pwm_manager_set_gesture_outputs(const uint16_t *us, uint8_t count)
 {
     if (!us) return;
     uint8_t n = (count < PWM_CHANNEL_COUNT) ? count : PWM_CHANNEL_COUNT;
-    pwm_lock();
+    //pwm_lock();
 
-    /* 检测任意通道 PWM 值是否发生变化 */
+    /* 检测哪些通道的 PWM 值发生变化 */
     bool any_changed = false;
+    bool ch1_5_changed[PWM_DIRECT_CH_COUNT] = {false};
     for (uint8_t i = 0; i < n; i++) {
         if (s_gesture_us[i] != us[i]) {
             any_changed = true;
-            break;
+            if (i < PWM_DIRECT_CH_COUNT) {
+                ch1_5_changed[i] = true;
+            }
         }
     }
 
@@ -193,11 +211,47 @@ void pwm_manager_set_gesture_outputs(const uint16_t *us, uint8_t count)
         s_gesture_us[i] = us[i];
     }
 
-    /* 直接写硬件，确保 PWM 输出实时生效 */
-    for (uint8_t i = 0; i < PWM_CHANNEL_COUNT; i++) {
-        uint16_t out_us = s_estop ? PWM_OUT_MID_US : s_gesture_us[i];
-        if (pwm_write(i, out_us)) {
-            s_pwm_us[i] = out_us;
+    if (s_estop) {
+        /* 急停：所有通道 1500us，取消过渡 */
+        for (uint8_t i = 0; i < PWM_DIRECT_CH_COUNT; i++) {
+            s_gesture_pending[i] = false;
+        }
+        for (uint8_t i = 0; i < PWM_CHANNEL_COUNT; i++) {
+            if (pwm_write(i, PWM_OUT_MID_US)) {
+                s_pwm_us[i] = PWM_OUT_MID_US;
+            }
+        }
+    } else {
+        /* CH6：立即输出目标值（不受 50ms 过渡影响） */
+        if (pwm_write(PWM_CHANNEL_COUNT - 1, s_gesture_us[PWM_CHANNEL_COUNT - 1])) {
+            s_pwm_us[PWM_CHANNEL_COUNT - 1] = s_gesture_us[PWM_CHANNEL_COUNT - 1];
+        }
+
+        /* CH1-CH5：值变化的通道先输出 1500us 并设置过渡 pending；
+         * 值未变化的通道直接输出当前值（含之前 pending 的目标值） */
+        bool has_pending = false;
+        for (uint8_t i = 0; i < PWM_DIRECT_CH_COUNT; i++) {
+            if (ch1_5_changed[i]) {
+                /* 变化：先输出 1500us，目标值存入 pending */
+                if (pwm_write(i, PWM_OUT_MID_US)) {
+                    s_pwm_us[i] = PWM_OUT_MID_US;
+                }
+                s_gesture_pending_us[i] = s_gesture_us[i];
+                s_gesture_pending[i] = true;
+                has_pending = true;
+            } else {
+                /* 未变化：清除 pending，直接输出当前值 */
+                s_gesture_pending[i] = false;
+                if (pwm_write(i, s_gesture_us[i])) {
+                    s_pwm_us[i] = s_gesture_us[i];
+                }
+            }
+        }
+
+        if (has_pending) {
+            s_gesture_pending_deadline_ms = millis() + GESTURE_TRANSITION_MS;
+            ESP_LOGI(TAG, "CH1-5 changed -> 1500us for %dms, then target",
+                     GESTURE_TRANSITION_MS);
         }
     }
 
@@ -209,7 +263,7 @@ void pwm_manager_set_gesture_outputs(const uint16_t *us, uint8_t count)
                  (unsigned long)pwm_manager_get_stroke_duration_ms());
     }
 
-    pwm_unlock();
+    //pwm_unlock();
 }
 
 void pwm_manager_init(void)
@@ -248,7 +302,7 @@ void pwm_manager_update(const int16_t *values, uint8_t count)
     /* 加锁保护 s_pwm_us[] / s_gesture_us[] / s_estop / s_gesture_mode 等共享状态，
      * 防止 LVGL 任务中的手势回调与主 loop 并发修改导致竞态。
      * 使用递归锁：pwm_manager_set_gesture_outputs() 等已持锁调用方可安全重入。 */
-    pwm_lock();
+    //pwm_lock();
 
     /* CH1~CH5 需要 count>=5 才能自动更新；CH6 仅需 CH1 输入值(count>=1)。
      * 覆盖/急停通道不受数据是否就绪影响（直接输出 1500us）。 */
@@ -264,13 +318,12 @@ void pwm_manager_update(const int16_t *values, uint8_t count)
             tag = "[ESTOP]";
         } else if (s_gesture_mode) {
             /* 手势模式下，PWM 输出由 s_gesture_us[] 驱动。
-             * 无论 values 是否为 NULL 都写硬件：
-             * - NULL 调用(来自 set_gesture_outputs)：s_gesture_us[] 刚被更新，s_pwm_us[] 已置 0，强制写入新值
-             * - values!=NULL 调用(来自 loop)：s_gesture_us[] 已由 ui_update_gesture_recv 更新，
-             *   若 Phase 1 因手势模式刚开启而跳过匹配，此处作为兜底确保硬件写入，
-             *   避免"屏幕显示正常但舵机不动"的问题。
-             * us==s_pwm_us[i] 时自动跳过(避免重复写寄存器)。 */
-            us = s_gesture_us[i];
+             * 处于中位过渡的 CH1-CH5 通道输出 1500us，其余通道输出目标值。 */
+            if (i < PWM_DIRECT_CH_COUNT && s_gesture_pending[i]) {
+                us = PWM_OUT_MID_US;    /* 过渡中：维持 1500us */
+            } else {
+                us = s_gesture_us[i];
+            }
             tag = "[GESTURE]";
         } else if (s_override[i]) {
             us = PWM_OUT_MID_US;        /* 单通道覆盖：1500us */
@@ -279,7 +332,7 @@ void pwm_manager_update(const int16_t *values, uint8_t count)
             /* CH1~CH5：直接映射各自 BLE 输入值
              * <650 -> 高档，>650 -> 低档，=650 -> 1500us
              * 高/低档由力度调节滑块决定（默认 2000/1000） */
-            if (!has_5) continue;       /* 数据不足，保持上一次输出 */
+            //if (!has_5) continue;       /* 数据不足，保持上一次输出 */
             int16_t v = values[i];
             if (v < PWM_VALUE_THRESHOLD) {
                 us = pwm_manager_get_high_us();
@@ -311,7 +364,7 @@ void pwm_manager_update(const int16_t *values, uint8_t count)
         }
     }
 
-    pwm_unlock();
+    //pwm_unlock();
 }
 
 /* ====== 力度调节 ====== */
@@ -376,14 +429,14 @@ void pwm_manager_set_gesture_outputs_timed(const uint16_t *us, uint8_t count, bo
 {
     /* 先取消正在运行的定时器，防止 pwm_manager_tick() 在更新过程中
      * 将 s_gesture_us[] 覆盖为 1500us（LVGL 任务与主循环并发的竞态）。 */
-    pwm_lock();
+    //pwm_lock();
     s_gesture_timed = false;
-    pwm_unlock();
+    //pwm_unlock();
 
     /* 设置输出（立即刷新硬件） */
     pwm_manager_set_gesture_outputs(us, count);
 
-    pwm_lock();
+    //pwm_lock();
     if (rest_pose) {
         /* 初始姿态/回归姿势：不启动定时，持续输出 */
         s_gesture_timed = false;
@@ -394,20 +447,34 @@ void pwm_manager_set_gesture_outputs_timed(const uint16_t *us, uint8_t count, bo
         ESP_LOGI(TAG, "Gesture timed: %lu ms -> then CH1~CH5 1500us, CH6 unchanged",
                  (unsigned long)pwm_manager_get_stroke_duration_ms());
     }
-    pwm_unlock();
+    //pwm_unlock();
 }
 
 void pwm_manager_tick(void)
 {
-    pwm_lock();
-    if (!s_gesture_timed) { pwm_unlock(); return; }
-    /* 急停或手势模式关闭时，定时无意义（硬件已由急停/BLE 控制） */
-    if (s_estop || !s_gesture_mode) {
-        s_gesture_timed = false;
-        pwm_unlock();
-        return;
+    /* CH1-CH5 中位过渡到期检查：50ms 到期后写入目标值。
+     * 放在 tick() 中（每次主循环都调用），而非 update() 中（仅有 BLE 数据时才调用），
+     * 避免 BLE 无数据时 pending 永不到期导致 CH1-CH5 卡在 1500us。 */
+    if (!s_estop) {
+        bool has_pending = false;
+        for (uint8_t i = 0; i < PWM_DIRECT_CH_COUNT; i++) {
+            if (s_gesture_pending[i]) { has_pending = true; break; }
+        }
+        if (has_pending && (int32_t)(millis() - s_gesture_pending_deadline_ms) >= 0) {
+            for (uint8_t i = 0; i < PWM_DIRECT_CH_COUNT; i++) {
+                if (s_gesture_pending[i]) {
+                    uint16_t target = s_gesture_pending_us[i];
+                    if (pwm_write(i, target)) {
+                        s_pwm_us[i] = target;
+                    }
+                    s_gesture_pending[i] = false;
+                    ESP_LOGI(TAG, "CH%u transition done -> %uus", i + 1, target);
+                }
+            }
+        }
     }
-    /* 检查是否到期 */
+
+    /* 检查行程定时是否到期 */
     if ((int32_t)(millis() - s_gesture_deadline_ms) >= 0) {
         /* CH1~CH5 回归 1500us；CH6 不受行程影响，保持当前值 */
         uint16_t mid[PWM_CHANNEL_COUNT];
@@ -420,12 +487,12 @@ void pwm_manager_tick(void)
         s_gesture_timed = false;
         ESP_LOGI(TAG, "Gesture timed out -> CH1~CH5 1500us, CH6 unchanged");
         /* 释放锁后再回调，避免回调中的 UI 操作与锁产生死锁 */
-        pwm_unlock();
+        //pwm_unlock();
         /* 通知 UI 更新 */
         if (s_expired_cb) {
             s_expired_cb();
         }
     } else {
-        pwm_unlock();
+        //pwm_unlock();
     }
 }

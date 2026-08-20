@@ -29,11 +29,12 @@ GESTURES = [
     ("ok.png",  "img_gesture_ok",  "ok"),
     ("good.png","img_gesture_good","good"),
     ("love.png","img_gesture_love","love"),
+    ("stop.png","img_gesture_stop","stop"),
 ]
 
-IMG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "数字手势")
-OUT_C   = os.path.join(os.path.dirname(os.path.abspath(__file__)), "gesture_images.c")
-OUT_H   = os.path.join(os.path.dirname(os.path.abspath(__file__)), "gesture_images.h")
+IMG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "assets")
+OUT_C   = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src", "gesture_images.c")
+OUT_H   = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "gesture_images.h")
 
 OUT_W = 36   # cell inner height is ~36px; keep square
 OUT_H_PX = 36

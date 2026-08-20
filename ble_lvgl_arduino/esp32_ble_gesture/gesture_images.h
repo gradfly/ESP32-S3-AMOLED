@@ -32,6 +32,8 @@ LV_IMG_DECLARE(img_gesture_ok);
 LV_IMG_DECLARE(img_gesture_good);
 /* gesture: love (36x36) */
 LV_IMG_DECLARE(img_gesture_love);
+/* gesture: stop (36x36) */
+LV_IMG_DECLARE(img_gesture_stop);
 
 #ifdef __cplusplus
 }

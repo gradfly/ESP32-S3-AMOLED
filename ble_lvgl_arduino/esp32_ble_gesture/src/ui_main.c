@@ -1867,6 +1867,7 @@ void ui_update_gesture_recv(const int16_t *values, uint8_t count)
      * PWM 函数（pwm_manager_set_gesture_outputs_timed 等）内部用
      * 递归互斥锁保护，无需 LVGL 锁。 */
     int matched = -1;
+    bool is_stop = false;
     bool on_screen = (lv_scr_act() == s_screen_gesture_recv);
 
     if (on_screen) {
@@ -1886,6 +1887,17 @@ void ui_update_gesture_recv(const int16_t *values, uint8_t count)
                 pwm_manager_set_gesture_outputs(mid, PWM_CHANNEL_COUNT);
                 s_last_recv_matched = -1;
             }
+        } else if (values[0] == GESTURE_RECV_THRESHOLD && values[1] == GESTURE_RECV_THRESHOLD &&
+                   values[2] == GESTURE_RECV_THRESHOLD && values[3] == GESTURE_RECV_THRESHOLD &&
+                   values[4] == GESTURE_RECV_THRESHOLD) {
+            /* 前 5 路全部为 650：输出停止手势（中位 PWM），显示 stop.png */
+            static const uint16_t mid[PWM_CHANNEL_COUNT] = {
+                PWM_OUT_MID_US, PWM_OUT_MID_US, PWM_OUT_MID_US,
+                PWM_OUT_MID_US, PWM_OUT_MID_US, PWM_OUT_MID_US
+            };
+            pwm_manager_set_gesture_outputs(mid, PWM_CHANNEL_COUNT);
+            s_last_recv_matched = -1;
+            is_stop = true;
         } else {
             /* 计算 5 位模式 */
             bool pattern[5];
@@ -1973,7 +1985,15 @@ void ui_update_gesture_recv(const int16_t *values, uint8_t count)
 
     /* 更新图片和名称（matched 在 Phase 1 计算；若 Phase 1 未执行则 matched=-1 显示 No Match，
      * 下帧 Phase 1 匹配后自动修正） */
-    if (matched >= 0) {
+    if (is_stop) {
+        if (s_gesture_recv_img) {
+            lv_obj_clear_flag(s_gesture_recv_img, LV_OBJ_FLAG_HIDDEN);
+            lv_img_set_src(s_gesture_recv_img, &img_gesture_stop);
+        }
+        if (s_gesture_recv_name) {
+            lv_label_set_text(s_gesture_recv_name, "Stop");
+        }
+    } else if (matched >= 0) {
         if (s_gesture_recv_img) {
             lv_obj_clear_flag(s_gesture_recv_img, LV_OBJ_FLAG_HIDDEN);
             /* 只更新图片源，zoom 和 align 由 create_gesture_recv_screen() 统一设置，
