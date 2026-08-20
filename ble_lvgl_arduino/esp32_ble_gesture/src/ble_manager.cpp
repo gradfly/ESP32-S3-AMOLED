@@ -86,21 +86,21 @@ class ServerCallbacks : public NimBLEServerCallbacks {
         s_is_connected = true;
         const uint8_t* mac = connInfo.getAddress().getVal();
         memcpy(s_remote_mac, mac, 6);
-        ESP_LOGI(TAG, "Phone connected: MAC=%02X:%02X:%02X:%02X:%02X:%02X",
+        ESP_LOGI(TAG, "BLE connected: MAC=%02X:%02X:%02X:%02X:%02X:%02X",
                  mac[5], mac[4], mac[3], mac[2], mac[1], mac[0]);
-        Serial.printf("[BLE] Phone connected: %02X:%02X:%02X:%02X:%02X:%02X\n",
+        Serial.printf("BLE connected: %02X:%02X:%02X:%02X:%02X:%02X\n",
                       mac[5], mac[4], mac[3], mac[2], mac[1], mac[0]);
         /* 设置待处理状态，主 loop 中统一处理 UI 更新 */
         s_pending_state = BLE_STATE_CONNECTED;
-        strncpy(s_pending_message, "Phone Connected", sizeof(s_pending_message) - 1);
+        strncpy(s_pending_message, "BLE Connected", sizeof(s_pending_message) - 1);
         s_pending_message[sizeof(s_pending_message) - 1] = '\0';
         s_state_pending = true;
     }
 
     void onDisconnect(NimBLEServer* pServer, NimBLEConnInfo& connInfo, int reason) override {
         s_is_connected = false;
-        ESP_LOGI(TAG, "Phone disconnected, reason=%d", reason);
-        Serial.printf("[BLE] Phone disconnected, reason=%d\n", reason);
+        ESP_LOGI(TAG, "BLE disconnected, reason=%d", reason);
+        Serial.printf("BLE disconnected, reason=%d\n", reason);
         /* 清空帧重组缓冲区 + 数据队列 */
         s_frame_len = 0;
         s_frame_buf[0] = '\0';
@@ -110,14 +110,14 @@ class ServerCallbacks : public NimBLEServerCallbacks {
         }
         /* 设置待处理状态，主 loop 中统一处理 UI 更新 */
         s_pending_state = BLE_STATE_DISCONNECTED;
-        strncpy(s_pending_message, "Phone Disconnected", sizeof(s_pending_message) - 1);
+        strncpy(s_pending_message, "BLE Disconnected", sizeof(s_pending_message) - 1);
         s_pending_message[sizeof(s_pending_message) - 1] = '\0';
         s_state_pending = true;
         /* 重新开启广播，允许下一次连接 */
         NimBLEAdvertising* pAdv = NimBLEDevice::getAdvertising();
         if (pAdv && !pAdv->isAdvertising()) {
             pAdv->start();
-            Serial.println("[BLE] Advertising restarted for next connection");
+            Serial.println("BLE Advertising restarted for next connection");
         }
     }
 };
@@ -132,7 +132,7 @@ class ServerWriteCallbacks : public NimBLECharacteristicCallbacks {
             memcpy(msg.data, val.data(), copy_len);
             msg.len = copy_len;
             xQueueSend(s_data_queue, &msg, 0);
-            Serial.printf("[BLE] Phone Write: %u bytes\n", (unsigned)copy_len);
+            Serial.printf("BLE Write: %u bytes\n", (unsigned)copy_len);
         }
     }
 };
@@ -823,7 +823,7 @@ void ble_manager_start_scan(void)
 
     // 停止并清理之前可能残留的扫描状态
     s_scan->stop();
-    delay(50);  // 给控制器时间完成停止操作
+    vTaskDelay(pdMS_TO_TICKS(50));  // 让出 CPU，不阻塞 LVGL 任务
     s_scan->clearResults();
 
     s_scan_result_count = 0;

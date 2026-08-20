@@ -6,7 +6,7 @@
 #include "esp_log.h"
 #include <string.h>
 
-/* ====== 深色主题颜色定义（参考技术文档图4-6深色风格）====== */
+/* ================== 深色主题颜色定义===================== */
 #define COLOR_BG               0x1A1A2E  /* 主背景：深蓝紫 */
 #define COLOR_BG_HEADER        0x16213E  /* 顶部状态栏背景 */
 #define COLOR_BG_DARK          0x0D1117  /* 更暗区域背景 */
@@ -42,9 +42,9 @@ static lv_obj_t *s_gesture_recv_name = NULL;    /* 手势名称标签（Gesture 
 static lv_obj_t *s_gesture_recv_status = NULL;  /* 顶部状态行：连接状态 */
 static lv_obj_t *s_gesture_recv_values = NULL;  /* 5 路通道值 + 模式显示 */
 
-/* 手势识别屏 PWM 输出状态 */
-static bool   s_recv_gesture_mode = false;   /* 识别屏开启的手势模式标志 */
-static int8_t s_last_recv_matched = -1;       /* 上次匹配的手势索引（-1=无匹配/无数据） */
+/* 手势识别屏状态：跟踪手势模式是否由本屏开启 + 上次匹配结果 */
+static bool s_recv_gesture_mode = false;   /* true=手势模式由手势识别屏开启 */
+static int  s_last_recv_matched = -1;      /* 上次匹配的手势索引，-1=无匹配 */
 
 /* 手势屏状态：需在 gesture_swipe_to_main() 等早期定义的函数前声明 */
 #define GESTURE_COUNT 12
@@ -1008,7 +1008,7 @@ static void create_gesture_screen(void)
 }
 
 /* ====== 手势识别屏：根据 BLE 前 5 路数据匹配并显示手势图形 ======
- * 阈值 650：value < 650 为高（1），value >= 650 为低（0）。
+ * 阈值 650：value < 650 为高（1），value > 650 为低（0）。
  * 5 路通道组合为 5 位模式，查表匹配对应手势图片。
  * 用户示例：<650, >650, <650, <650, <650 → 模式 01000 → Gesture 1 */
 #define GESTURE_RECV_THRESHOLD  650
@@ -1018,21 +1018,22 @@ typedef struct {
     bool pattern[5];              /* true = <650, false = >650 */
     const lv_img_dsc_t *img;
     const char *name;
+    uint8_t gesture_index;        /* index into s_gestures; drives PWM directly */
 } gesture_recv_entry_t;
 
 static const gesture_recv_entry_t s_gesture_recv_map[GESTURE_RECV_MAP_SIZE] = {
-    {{false, true,  false, false, false}, &img_gesture_1,    "Gesture 1"},   /* 01000 */
-    {{false, true,  true,  false, false}, &img_gesture_2,    "Gesture 2"},   /* 01100 */
-    {{false, true,  true,  true,  false}, &img_gesture_3,    "Gesture 3"},   /* 01110 */
-    {{false, true,  true,  true,  true},  &img_gesture_4,    "Gesture 4"},   /* 01111 */
-    {{true,  true,  true,  true,  true},  &img_gesture_5,    "Gesture 5"},   /* 11111 */
-    {{true,  false, false, false, true},  &img_gesture_6,    "Gesture 6"},   /* 10001 */
-    {{true,  true,  true,  false, false}, &img_gesture_7,    "Gesture 7"},   /* 11100 */
-    {{true,  true,  false, false, false}, &img_gesture_8,    "Gesture 8"},   /* 11000 */
-    {{false, false, false, false, false}, &img_gesture_10,   "Gesture 10"},  /* 00000 */
-    {{true,  false, false, false, false}, &img_gesture_good, "Good"},        /* 10000 */
-    {{false, false, true,  true,  true},  &img_gesture_ok,   "OK"},          /* 00111 */
-    {{true,  true,  false, false, true},  &img_gesture_love, "Love"},        /* 11001 */
+    {{false, true,  false, false, false}, &img_gesture_1,    "Gesture 1",  0}, /* 01000 */
+    {{false, true,  true,  false, false}, &img_gesture_2,    "Gesture 2",  1}, /* 01100 */
+    {{false, true,  true,  true,  false}, &img_gesture_3,    "Gesture 3",  2}, /* 01110 */
+    {{false, true,  true,  true,  true},  &img_gesture_4,    "Gesture 4",  3}, /* 01111 */
+    {{true,  true,  true,  true,  true},  &img_gesture_5,    "Gesture 5",  4}, /* 11111 */
+    {{true,  false, false, false, true},  &img_gesture_6,    "Gesture 6",  5}, /* 10001 */
+    {{true,  true,  true,  false, false}, &img_gesture_7,    "Gesture 7",  6}, /* 11100 */
+    {{true,  true,  false, false, false}, &img_gesture_8,    "Gesture 8",  7}, /* 11000 */
+    {{false, false, false, false, false}, &img_gesture_10,   "Gesture 10", 8}, /* 00000 */
+    {{true,  false, false, false, false}, &img_gesture_good, "Good",       10}, /* 10000 */
+    {{false, false, true,  true,  true},  &img_gesture_ok,   "OK",          9}, /* 00111 */
+    {{true,  true,  false, false, true},  &img_gesture_love, "Love",       11}, /* 11001 */
 };
 
 static void create_gesture_recv_screen(void)
@@ -1466,8 +1467,12 @@ void ui_update_state(ble_state_t state, const char *message)
                 /* 清空旧数据：即便未跳屏，后续滑动进入时也是干净状态 */
                 ui_clear_data();
                 ui_clear_pwm();
-                /* 手势模式在连接后自动关闭：PWM 重新跟随 BLE 输入数据 */
+                /* 手势模式在连接后自动关闭：PWM 重新跟随 BLE 输入数据。
+                 * 同时重置 s_recv_gesture_mode，否则 refresh_active_screen_status()
+                 * 误以为仍在手势模式而不关闭，导致 pwm_manager_update() 跳过所有通道。 */
                 pwm_manager_set_gesture_mode(false);
+                s_recv_gesture_mode = false;
+                s_last_recv_matched = -1;
             } else {
                 /* 外设连接：跳数据屏（原有行为） */
                 ui_switch_screen(UI_SCREEN_DATA);
@@ -1493,8 +1498,10 @@ void ui_update_state(ble_state_t state, const char *message)
                 }
                 pwm_manager_set_estop(false);
                 pwm_manager_set_gesture_mode(false);
-                /* 触发一次 pwm_manager_update(NULL,1500) → 全通道按默认不输出 */
-                pwm_manager_update(NULL, 1500);
+                s_recv_gesture_mode = false;
+                s_last_recv_matched = -1;
+                /* 清除内部输出缓存；下一帧 BLE 数据会重新写入硬件。 */
+                pwm_manager_update(NULL, 0);
             } else {
                 /* 外设断开：跳回首页（原有行为） */
                 ui_switch_screen(UI_SCREEN_MAIN);
@@ -1704,11 +1711,16 @@ void ui_update_pwm_values(const int16_t *values, uint8_t count)
             }
         }
 
-        /* 输出脉宽：急停 > 单通道覆盖 > 自动跟随 CH 值 */
+        /* 输出脉宽：急停 > 手势模式 > 单通道覆盖 > 自动跟随 CH 值 */
         uint16_t us;
         bool show_value;
         if (estop) {
             us = PWM_OUT_MID_US;                 /* 急停 -> 1500us */
+            show_value = true;
+        } else if (pwm_manager_get_gesture_mode()) {
+            /* 手势模式：显示 s_gesture_us[] 的实际输出值，
+             * 与 pwm_manager_update() 优先级一致 */
+            us = pwm_manager_get_gesture_us(i);
             show_value = true;
         } else if (ovr) {
             us = PWM_OUT_MID_US;                 /* 覆盖 -> 1500us */
@@ -1857,7 +1869,11 @@ void ui_update_gesture_recv(const int16_t *values, uint8_t count)
     int matched = -1;
     bool on_screen = (lv_scr_act() == s_screen_gesture_recv);
 
-    if (on_screen && pwm_manager_get_gesture_mode()) {
+    if (on_screen) {
+        /* 确保手势模式开启后再匹配输出 */
+        if (!pwm_manager_get_gesture_mode()) {
+            pwm_manager_set_gesture_mode(true);
+        }
         s_recv_gesture_mode = true;
 
         if (!values || count < 5) {
@@ -1867,7 +1883,7 @@ void ui_update_gesture_recv(const int16_t *values, uint8_t count)
                     PWM_OUT_MID_US, PWM_OUT_MID_US, PWM_OUT_MID_US,
                     PWM_OUT_MID_US, PWM_OUT_MID_US, PWM_OUT_MID_US
                 };
-                pwm_manager_set_gesture_outputs_timed(mid, PWM_CHANNEL_COUNT, true);
+                pwm_manager_set_gesture_outputs(mid, PWM_CHANNEL_COUNT);
                 s_last_recv_matched = -1;
             }
         } else {
@@ -1889,28 +1905,31 @@ void ui_update_gesture_recv(const int16_t *values, uint8_t count)
                 if (match) { matched = i; break; }
             }
 
-            /* 匹配结果变化时立即切换 PWM（取消旧定时，启动新定时），
-             * 确保手势切换时舵机立即响应，不等旧手势行程结束。 */
-            if (matched != s_last_recv_matched) {
-                s_last_recv_matched = matched;
-                if (matched >= 0) {
-                    for (uint8_t i = 0; i < GESTURE_COUNT; i++) {
-                        if (s_gestures[i].img == s_gesture_recv_map[matched].img) {
-                            uint16_t remapped[PWM_CHANNEL_COUNT];
-                            remap_gesture_pwm(s_gestures[i].pwm, remapped);
-                            pwm_manager_set_gesture_outputs_timed(remapped, PWM_CHANNEL_COUNT, false);
-                            break;
-                        }
-                    }
-                } else {
-                    static const uint16_t mid[PWM_CHANNEL_COUNT] = {
-                        PWM_OUT_MID_US, PWM_OUT_MID_US, PWM_OUT_MID_US,
-                        PWM_OUT_MID_US, PWM_OUT_MID_US, PWM_OUT_MID_US
-                    };
-                    pwm_manager_set_gesture_outputs_timed(mid, PWM_CHANNEL_COUNT, true);
-                }
+            /* 匹配手势后设置 PWM 输出，值变化时自动重新计时 */
+            s_last_recv_matched = matched;
+            if (matched >= 0) {
+                uint8_t gesture_index = s_gesture_recv_map[matched].gesture_index;
+                uint16_t remapped[PWM_CHANNEL_COUNT];
+                remap_gesture_pwm(s_gestures[gesture_index].pwm, remapped);
+                pwm_manager_set_gesture_outputs(remapped, PWM_CHANNEL_COUNT);
+            } else {
+                static const uint16_t mid[PWM_CHANNEL_COUNT] = {
+                    PWM_OUT_MID_US, PWM_OUT_MID_US, PWM_OUT_MID_US,
+                    PWM_OUT_MID_US, PWM_OUT_MID_US, PWM_OUT_MID_US
+                };
+                pwm_manager_set_gesture_outputs(mid, PWM_CHANNEL_COUNT);
             }
         }
+    } else if (!on_screen && lv_scr_act() != s_screen_gesture && pwm_manager_get_gesture_mode()) {
+        /* 不在手势识别屏且不在训练屏但手势模式仍开启：立即关闭，使
+         * pwm_manager_update() 走自动映射路径写硬件。
+         * 训练屏（s_screen_gesture）也使用手势模式，不能在此关闭，
+         * 否则 BLE 数据到达时 pwm_manager_update() 会走 BLE 自动映射，
+         * 用 BLE 推算值覆盖手势 PWM 值——值相同的通道不受影响（跳过写），
+         * 值不同的通道被覆盖为错误值，导致舵机停止运行。 */
+        pwm_manager_set_gesture_mode(false);
+        s_recv_gesture_mode = false;
+        s_last_recv_matched = -1;
     }
 
     /* Phase 2: UI 更新（需要 LVGL 互斥锁）。
@@ -1927,11 +1946,8 @@ void ui_update_gesture_recv(const int16_t *values, uint8_t count)
         return;
     }
 
-    /* 确保手势模式开启（Phase 1 可能因模式未开启而跳过匹配，
-     * 此处开启后下帧 Phase 1 即可正常匹配） */
-    if (!pwm_manager_get_gesture_mode()) {
-        pwm_manager_set_gesture_mode(true);
-    }
+    /* Phase 1 已确保手势模式开启（on_screen 时），此处不再重复开启。
+     * 若 Phase 1 因 lv_scr_act() 读到过期值而未执行，下帧会自动修正。 */
     s_recv_gesture_mode = true;
 
     /* 数据不足 5 路时显示等待 */
@@ -1984,7 +2000,9 @@ static void event_scan_btn_cb(lv_event_t *e)
     /* 恢复 BLE 驱动模式：关闭手势模式，PWM 重新跟随 BLE 输入 */
     pwm_manager_set_gesture_mode(false);
     ui_switch_screen(UI_SCREEN_LIST);
-    ble_manager_start_scan();
+    /* 延迟到主循环中执行 ble_manager_start_scan()，
+     * 避免在 LVGL 回调中阻塞（delay + update_state）导致 UI 卡死 */
+    ui_request_scan();
 }
 
 /* 主屏 "自主训练" 按钮：开启手势模式（直接指定 PWM 输出，忽略 BLE），

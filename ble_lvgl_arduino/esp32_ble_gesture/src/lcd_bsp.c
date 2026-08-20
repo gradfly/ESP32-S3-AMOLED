@@ -77,13 +77,13 @@ static bool example_lvgl_lock(int timeout_ms)
 {
     if (!lvgl_mux) return false;
     const TickType_t timeout_ticks = (timeout_ms == -1) ? portMAX_DELAY : pdMS_TO_TICKS(timeout_ms);
-    return xSemaphoreTake(lvgl_mux, timeout_ticks) == pdTRUE;
+    return xSemaphoreTakeRecursive(lvgl_mux, timeout_ticks) == pdTRUE;
 }
 
 static void example_lvgl_unlock(void)
 {
     if (lvgl_mux) {
-        xSemaphoreGive(lvgl_mux);
+        xSemaphoreGiveRecursive(lvgl_mux);
     }
 }
 

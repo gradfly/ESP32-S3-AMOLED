@@ -25,6 +25,9 @@ void ui_update_state(ble_state_t state, const char *message);
 void ui_append_data(const uint8_t *data, uint16_t len);
 void ui_clear_data(void);
 
+/* 请求延迟启动 BLE 扫描（在主循环中执行，避免阻塞 LVGL 任务） */
+void ui_request_scan(void);
+
 /* 用最新一帧的 11 个数值刷新数据屏的通道网格（实时更新） */
 void ui_update_data_values(const int16_t *values, uint8_t count);
 

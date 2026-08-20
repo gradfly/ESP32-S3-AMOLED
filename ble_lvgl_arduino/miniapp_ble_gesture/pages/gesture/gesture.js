@@ -149,36 +149,35 @@ Page({
     }
     const g = GESTURES[idx];
     this.setData({ _sending: true });
-    try {
-      wx.showLoading({ title: `发送 ${g.name}`, mask: true });
 
+    // 先更新 UI（选中高亮 + 底部PWM），让用户立即看到反馈，不等 BLE 写完成
+    this._savedCH = g.ch.slice();
+    this.setData({
+      selectedIndex: idx,
+      summaryText: g.pwmSummary,
+      estopOn: false
+    });
+
+    try {
       // 组装帧：11路CH → ArrayBuffer
       const ab = encode11chFrame(g.ch);
       console.log(`[Gesture] 发送手势[${g.name}] 帧: ${arrayBufferToString(ab)} 字节=${ab.byteLength}`);
 
       // BLE Write（自动分包>20字节，包之间间隔30ms）
       await writeData(ab);
-      wx.hideLoading();
 
-      // 发送成功 → UI反馈：选中高亮 + 底部PWM更新 + Toast
-      this._savedCH = g.ch.slice();  // 保存当前 CH 供急停恢复使用
-      this.setData({
-        selectedIndex: idx,
-        summaryText: g.pwmSummary,
-        estopOn: false  // 急停状态下点手势 → 自动解除急停
-      });
+      // 发送成功 → 轻量 Toast（icon:none 不阻塞触摸，duration 短）
       wx.showToast({
         title: `${g.name} 已发送`,
         icon: 'success',
-        duration: 900
+        duration: 400
       });
     } catch (err) {
-      wx.hideLoading();
       console.error('[Gesture] 发送失败:', err);
       const msg = (err && err.errMsg) ? err.errMsg : (err ? String(err) : '未知错误');
       wx.showToast({
         title: '发送失败',
-        icon: 'none',
+        icon: 'warning',
         duration: 2000
       });
       // 连接异常：提示返回首页
@@ -202,27 +201,25 @@ Page({
   async onResetTap() {
     if (this.data._sending) return;
     if (!isConnected()) {
-      wx.showToast({ title: '蓝牙未连接', icon: 'none' });
+      wx.showToast({ title: '蓝牙未连接', icon: 'warning' });
       return;
     }
     this.setData({ _sending: true, resetting: true });
+    // 先更新 UI，让用户立即看到反馈
+    this._savedCH = RESET_CH.slice();
+    this.setData({
+      selectedIndex: -1,
+      summaryText: RESET_SUMMARY,
+      estopOn: false
+    });
     try {
-      wx.showLoading({ title: '初始中', mask: true });
       const ab = encode11chFrame(RESET_CH);
       console.log(`[Gesture] 初始姿态帧: ${arrayBufferToString(ab)} 字节=${ab.byteLength}`);
       await writeData(ab);
-      wx.hideLoading();
-      this._savedCH = RESET_CH.slice();  // 保存当前 CH 供急停恢复使用
-      this.setData({
-        selectedIndex: -1,
-        summaryText: RESET_SUMMARY,
-        estopOn: false  // 解除急停
-      });
-      wx.showToast({ title: '已恢复初始姿态', icon: 'success', duration: 900 });
+      wx.showToast({ title: '已恢复初始姿态', icon: 'success', duration: 400 });
     } catch (err) {
-      wx.hideLoading();
       console.error('[Gesture] 初始姿态失败:', err);
-      wx.showToast({ title: '初始姿态失败', icon: 'none' });
+      wx.showToast({ title: '初始姿态失败', icon: 'warning' });
     } finally {
       this.setData({ _sending: false, resetting: false });
     }
@@ -271,41 +268,32 @@ Page({
     }
     const nextOn = !this.data.estopOn;
     this.setData({ _sending: true });
+    // 先更新 UI，让用户立即看到反馈
+    if (nextOn) {
+      this.setData({ estopOn: true, summaryText: ESTOP_SUMMARY });
+    } else {
+      let resumeSummary = RESET_SUMMARY;
+      if (this.data.selectedIndex >= 0 && this.data.selectedIndex < GESTURES.length) {
+        resumeSummary = GESTURES[this.data.selectedIndex].pwmSummary;
+      }
+      this.setData({ estopOn: false, summaryText: resumeSummary });
+    }
     try {
       if (nextOn) {
         // ===== 开启急停：发送 ESTOP_CH 数据帧 =====
-        wx.showLoading({ title: '急停中', mask: true });
         const ab = encode11chFrame(ESTOP_CH);
         console.log(`[Gesture] 急停帧: ${arrayBufferToString(ab)}`);
         await writeData(ab);
-        wx.hideLoading();
-        this.setData({
-          estopOn: true,
-          summaryText: ESTOP_SUMMARY
-        });
-        wx.showToast({ title: '已急停', icon: 'none', duration: 900 });
+        wx.showToast({ title: '已急停', icon: 'success', duration: 400 });
       } else {
         // ===== 恢复：发送急停前保存的 CH 数据帧 =====
-        wx.showLoading({ title: '恢复中', mask: true });
         const resumeCH = this._savedCH || RESET_CH.slice();
         const ab = encode11chFrame(resumeCH);
         console.log(`[Gesture] 恢复帧(急停前CH): ${arrayBufferToString(ab)}`);
         await writeData(ab);
-        wx.hideLoading();
-
-        // 恢复汇总显示：根据选中项或初始姿态
-        let resumeSummary = RESET_SUMMARY;
-        if (this.data.selectedIndex >= 0 && this.data.selectedIndex < GESTURES.length) {
-          resumeSummary = GESTURES[this.data.selectedIndex].pwmSummary;
-        }
-        this.setData({
-          estopOn: false,
-          summaryText: resumeSummary
-        });
-        wx.showToast({ title: '已恢复', icon: 'success', duration: 900 });
+        wx.showToast({ title: '已恢复', icon: 'success', duration: 400 });
       }
     } catch (err) {
-      wx.hideLoading();
       console.error('[Gesture] 急停命令发送失败:', err);
       const msg = (err && err.errMsg) ? err.errMsg : (err ? String(err) : '未知错误');
       wx.showToast({

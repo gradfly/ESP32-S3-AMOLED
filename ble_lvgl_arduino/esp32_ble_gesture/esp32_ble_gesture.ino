@@ -16,6 +16,16 @@ static char s_latest_raw[128] = "";
 static uint16_t s_latest_raw_len = 0;
 static bool s_data_dirty = false;
 
+/* 扫描请求标志：由 UI 回调设置，主循环中执行实际扫描启动，
+ * 避免 ble_manager_start_scan() 中的 delay/update_state 阻塞 LVGL 任务。 */
+static bool s_scan_pending = false;
+
+/* UI 回调调用此函数请求扫描，主循环中检测标志并执行 ble_manager_start_scan() */
+void ui_request_scan(void)
+{
+    s_scan_pending = true;
+}
+
 static void ble_data_callback(uint8_t *data, uint16_t len)
 {
     /* data 是已按 ';' 重组的完整帧，直接解析为 11 个数值 */
@@ -102,6 +112,12 @@ void setup()
 
 void loop()
 {
+    /* 在主任务中执行延迟的扫描启动（避免在 LVGL 回调中阻塞） */
+    if (s_scan_pending) {
+        s_scan_pending = false;
+        ble_manager_start_scan();
+    }
+
     /* 处理 BLE 回调中设置的待处理状态变更（连接/断开通知）。
      * 必须在 ble_manager_process_data() 之前调用，确保连接状态
      * 先于数据更新通知到 UI 层。 */
@@ -119,11 +135,11 @@ void loop()
     if (s_data_dirty) {
         s_data_dirty = false;
         /* 手势识别屏：优先匹配手势并切换 PWM。
-         * 手势模式下 pwm_manager_update(values) 会跳过手势通道，
-         * PWM 输出完全由 ui_update_gesture_recv 内部调用
-         * pwm_manager_set_gesture_outputs_timed() 驱动，确保实时切换。 */
+         * ui_update_gesture_recv 内部调用 pwm_manager_set_gesture_outputs_timed()
+         * 写入新 PWM 值；随后 pwm_manager_update(values) 作为兜底：
+         * 手势模式下用 s_gesture_us[] 写硬件(若 Phase 1 因模式刚开启而跳过匹配，
+         * 此处确保硬件仍被写入)，非手势模式时走自动映射。 */
         ui_update_gesture_recv(s_latest_values, s_latest_value_count);
-        /* 非手势模式(自动映射)时输出 PWM；手势模式时跳过手势通道 */
         pwm_manager_update(s_latest_values, s_latest_value_count);
         ui_update_data_values(s_latest_values, s_latest_value_count);
         ui_append_data((const uint8_t *)s_latest_raw, s_latest_raw_len);
@@ -149,7 +165,8 @@ void loop()
         Serial.printf("[LOOP] Scan complete: %d devices found, updating UI...\n", count);
         ui_update_scan_results();
         last_scan_count = count;
-    } else {
+    } else if (state != BLE_STATE_SCANNING) {
+        /* 非扫描期间：检测设备列表变化（如连接后断开重扫） */
         uint16_t count = 0;
         ble_manager_get_scan_results(NULL, &count);
         if (count != last_scan_count) {

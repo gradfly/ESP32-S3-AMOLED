@@ -79,6 +79,11 @@ bool pwm_manager_get_estop(void);
 void pwm_manager_set_gesture_mode(bool on);
 bool pwm_manager_get_gesture_mode(void);
 
+/* 获取手势模式下指定通道的输出脉宽（us）。
+ * ch: 通道索引 0~5（对应 CH1~CH6）。
+ * 返回 s_gesture_us[ch] 的当前值，供 UI 显示与 pwm_manager_update() 一致。 */
+uint16_t pwm_manager_get_gesture_us(uint8_t ch);
+
 /* 设置手势模式的 6 路输出脉宽（us）并立即刷新硬件。
  * us  : 6 元素数组（CH1~CH6 脉宽，如 1350/1500/2000/1000 等）。
  * count: 数组有效长度（应 >= 6）。

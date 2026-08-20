@@ -209,7 +209,16 @@ export async function subscribeNotify(onData) {
 }
 
 // 7. 向FFE1写数据（自动分包>20字节，包之间间隔30ms）
-export async function writeData(arrayBuffer) {
+// 串行化写入：多次快速调用 writeData 时按顺序执行，防止分包交错导致 ESP32 帧重组错误
+let _writeChain = Promise.resolve();
+
+export function writeData(arrayBuffer) {
+  const result = _writeChain.then(() => _writeDataImpl(arrayBuffer));
+  _writeChain = result.then(() => {}, () => {});
+  return result;
+}
+
+async function _writeDataImpl(arrayBuffer) {
   if (!deviceId || !serviceId || !writeCharId) {
     throw new Error('蓝牙连接未就绪，无法发送');
   }

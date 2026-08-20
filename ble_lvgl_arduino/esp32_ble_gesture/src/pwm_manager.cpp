@@ -28,6 +28,10 @@ static const uint8_t s_pwm_pins[PWM_CHANNEL_COUNT] = {
 /* 当前每路输出脉宽（us），用于调试/日志输出 */
 static uint16_t s_pwm_us[PWM_CHANNEL_COUNT] = {0};
 
+/* ledcAttach may fail during startup if another peripheral still owns a
+ * channel. Keep the state so a later BLE frame can recover the output. */
+static bool s_pwm_attached[PWM_CHANNEL_COUNT] = {false};
+
 /* 手动覆盖标志：为 true 的通道直接输出 1500us，不受 CH 值影响 */
 static bool s_override[PWM_CHANNEL_COUNT] = {false};
 
@@ -75,6 +79,30 @@ static inline uint32_t pwm_us_to_duty(uint16_t us)
 {
     if (us > PWM_PERIOD_US) us = PWM_PERIOD_US;
     return (uint32_t)us * (PWM_MAX_DUTY + 1) / PWM_PERIOD_US;
+}
+
+static bool pwm_write(uint8_t index, uint16_t us)
+{
+    if (index >= PWM_CHANNEL_COUNT) return false;
+
+    uint8_t pin = s_pwm_pins[index];
+    if (!s_pwm_attached[index]) {
+        s_pwm_attached[index] = ledcAttach(pin, PWM_FREQ_HZ, PWM_RESOLUTION_BITS);
+        if (!s_pwm_attached[index]) {
+            ESP_LOGE(TAG, "LEDC attach failed: CH%u pin=%u", index + 1, pin);
+            return false;
+        }
+        ESP_LOGI(TAG, "LEDC attach recovered: CH%u pin=%u", index + 1, pin);
+    }
+
+    uint32_t duty = pwm_us_to_duty(us);
+    if (!ledcWrite(pin, duty)) {
+        s_pwm_attached[index] = false;
+        ESP_LOGE(TAG, "LEDC write failed: CH%u pin=%u duty=%lu",
+                 index + 1, pin, (unsigned long)duty);
+        return false;
+    }
+    return true;
 }
 
 void pwm_manager_set_override(uint8_t ch, bool override)
@@ -140,22 +168,47 @@ bool pwm_manager_get_gesture_mode(void)
     return s_gesture_mode;
 }
 
+uint16_t pwm_manager_get_gesture_us(uint8_t ch)
+{
+    return (ch < PWM_CHANNEL_COUNT) ? s_gesture_us[ch] : PWM_OUT_MID_US;
+}
+
 void pwm_manager_set_gesture_outputs(const uint16_t *us, uint8_t count)
 {
     if (!us) return;
     uint8_t n = (count < PWM_CHANNEL_COUNT) ? count : PWM_CHANNEL_COUNT;
     pwm_lock();
+
+    /* 检测任意通道 PWM 值是否发生变化 */
+    bool any_changed = false;
+    for (uint8_t i = 0; i < n; i++) {
+        if (s_gesture_us[i] != us[i]) {
+            any_changed = true;
+            break;
+        }
+    }
+
+    /* 更新期望输出值 */
     for (uint8_t i = 0; i < n; i++) {
         s_gesture_us[i] = us[i];
     }
-    /* 强制下次 update 重写所有硬件（即使脉宽恰好相同），
-     * 确保手势切换后所有通道立即生效。 */
+
+    /* 直接写硬件，确保 PWM 输出实时生效 */
     for (uint8_t i = 0; i < PWM_CHANNEL_COUNT; i++) {
-        s_pwm_us[i] = 0;
+        uint16_t out_us = s_estop ? PWM_OUT_MID_US : s_gesture_us[i];
+        if (pwm_write(i, out_us)) {
+            s_pwm_us[i] = out_us;
+        }
     }
-    /* 触发硬件刷新：手势模式开启时按 s_gesture_us 输出；
-     * 未开启时仅缓存（update 会走 BLE/覆盖分支，不读 s_gesture_us）。 */
-    pwm_manager_update(NULL, 0);
+
+    /* 任意 PWM 值发生变化时重新计时 */
+    if (any_changed && s_gesture_mode && !s_estop) {
+        s_gesture_deadline_ms = millis() + pwm_manager_get_stroke_duration_ms();
+        s_gesture_timed = true;
+        ESP_LOGI(TAG, "PWM changed -> restart gesture timer: %lu ms",
+                 (unsigned long)pwm_manager_get_stroke_duration_ms());
+    }
+
     pwm_unlock();
 }
 
@@ -172,10 +225,18 @@ void pwm_manager_init(void)
             ESP_LOGE(TAG, "ledcAttach failed: ch=%u pin=%u", i + 1, pin);
             continue;
         }
+        s_pwm_attached[i] = true;
         /* 上电默认输出中位 1500us（停转），所有 6 路一致 */
         uint16_t default_us = PWM_OUT_MID_US;
         uint32_t duty = pwm_us_to_duty(default_us);
-        ledcWrite(pin, duty);
+        if (!ledcWrite(pin, duty)) {
+            s_pwm_attached[i] = false;
+            ESP_LOGE(TAG, "Initial LEDC write failed: ch=%u pin=%u", i + 1, pin);
+            /* ledcWrite 失败时不能设置 s_pwm_us[i]，
+             * 否则软件认为已输出 1500us 但硬件未写入，
+             * 后续 us==s_pwm_us[i] 时跳过写入导致舵机不动 */
+            continue;
+        }
         s_pwm_us[i] = default_us;
         ESP_LOGI(TAG, "CH%u init: pin=%u, 50Hz/%ubit, default=%uus(duty=%lu)",
                  i + 1, pin, PWM_RESOLUTION_BITS, default_us, (unsigned long)duty);
@@ -202,11 +263,13 @@ void pwm_manager_update(const int16_t *values, uint8_t count)
             us = PWM_OUT_MID_US;        /* 急停：1500us，所有通道 */
             tag = "[ESTOP]";
         } else if (s_gesture_mode) {
-            /* 手势模式下，PWM 输出由 pwm_manager_set_gesture_outputs_timed() 独占管理。
-             * 主循环传入 BLE 数据(values!=NULL)时跳过本通道，避免输出旧的
-             * s_gesture_us[] 覆盖刚由手势匹配写入的新值。
-             * NULL 调用(来自 set_gesture_outputs)才实际写硬件。 */
-            if (values) continue;
+            /* 手势模式下，PWM 输出由 s_gesture_us[] 驱动。
+             * 无论 values 是否为 NULL 都写硬件：
+             * - NULL 调用(来自 set_gesture_outputs)：s_gesture_us[] 刚被更新，s_pwm_us[] 已置 0，强制写入新值
+             * - values!=NULL 调用(来自 loop)：s_gesture_us[] 已由 ui_update_gesture_recv 更新，
+             *   若 Phase 1 因手势模式刚开启而跳过匹配，此处作为兜底确保硬件写入，
+             *   避免"屏幕显示正常但舵机不动"的问题。
+             * us==s_pwm_us[i] 时自动跳过(避免重复写寄存器)。 */
             us = s_gesture_us[i];
             tag = "[GESTURE]";
         } else if (s_override[i]) {
@@ -235,10 +298,13 @@ void pwm_manager_update(const int16_t *values, uint8_t count)
             tag = "auto6";
         }
 
-        if (us != s_pwm_us[i]) {
-            /* 仅在脉宽变化时写硬件，减少 LEDC 寄存器访问 */
+        /* 始终写硬件，确保 PWM 输出实时生效。
+         * 之前 us==s_pwm_us[i] 时跳过写入，但 s_pwm_us[i] 可能与硬件
+         * 实际状态不一致（如 init 时 ledcWrite 失败但 s_pwm_us 被赋值），
+         * 导致期望值变化但舵机不动，必须 toggle override 才能恢复。
+         * ledcWrite 仅更新 duty 寄存器（微秒级），6 路×20Hz 开销可忽略。 */
+        if (pwm_write(i, us)) {
             uint32_t duty = pwm_us_to_duty(us);
-            ledcWrite(s_pwm_pins[i], duty);
             s_pwm_us[i] = us;
             ESP_LOGI(TAG, "CH%u %s -> %uus (duty=%lu)",
                      i + 1, tag, us, (unsigned long)duty);
@@ -343,7 +409,6 @@ void pwm_manager_tick(void)
     }
     /* 检查是否到期 */
     if ((int32_t)(millis() - s_gesture_deadline_ms) >= 0) {
-        s_gesture_timed = false;
         /* CH1~CH5 回归 1500us；CH6 不受行程影响，保持当前值 */
         uint16_t mid[PWM_CHANNEL_COUNT];
         for (uint8_t i = 0; i < PWM_CHANNEL_COUNT; i++) {
@@ -351,6 +416,8 @@ void pwm_manager_tick(void)
         }
         mid[5] = s_gesture_us[5];  /* CH6 保持当前值 */
         pwm_manager_set_gesture_outputs(mid, PWM_CHANNEL_COUNT);
+        /* 定时到期后强制关闭定时器，覆盖 set_gesture_outputs() 内的重新计时 */
+        s_gesture_timed = false;
         ESP_LOGI(TAG, "Gesture timed out -> CH1~CH5 1500us, CH6 unchanged");
         /* 释放锁后再回调，避免回调中的 UI 操作与锁产生死锁 */
         pwm_unlock();
