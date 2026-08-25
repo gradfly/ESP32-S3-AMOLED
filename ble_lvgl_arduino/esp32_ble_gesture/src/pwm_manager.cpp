@@ -351,16 +351,18 @@ void pwm_manager_update(const int16_t *values, uint8_t count)
             tag = "auto6";
         }
 
-        /* 始终写硬件，确保 PWM 输出实时生效。
-         * 之前 us==s_pwm_us[i] 时跳过写入，但 s_pwm_us[i] 可能与硬件
-         * 实际状态不一致（如 init 时 ledcWrite 失败但 s_pwm_us 被赋值），
-         * 导致期望值变化但舵机不动，必须 toggle override 才能恢复。
-         * ledcWrite 仅更新 duty 寄存器（微秒级），6 路×20Hz 开销可忽略。 */
-        if (pwm_write(i, us)) {
-            uint32_t duty = pwm_us_to_duty(us);
-            s_pwm_us[i] = us;
-            ESP_LOGI(TAG, "CH%u %s -> %uus (duty=%lu)",
-                     i + 1, tag, us, (unsigned long)duty);
+        /* 仅在脉宽变化时写硬件，避免相同值重复 ledcWrite 导致 PWM 信号抖动。
+         * s_pwm_us[i] 仅在 pwm_write 成功后更新（init/update/gesture_outputs 均如此），
+         * 故 s_pwm_us[i] 始终反映硬件实际输出值，跳过写入是安全的。
+         * 状态变更（override/estop/gesture_mode/force_level）通过将 s_pwm_us[i]
+         * 置 0 强制下次写入，us 为非零值故 0 != us 必然触发重写。 */
+        if (us != s_pwm_us[i]) {
+            if (pwm_write(i, us)) {
+                uint32_t duty = pwm_us_to_duty(us);
+                s_pwm_us[i] = us;
+                ESP_LOGI(TAG, "CH%u %s -> %uus (duty=%lu)",
+                         i + 1, tag, us, (unsigned long)duty);
+            }
         }
     }
 
@@ -474,8 +476,8 @@ void pwm_manager_tick(void)
         }
     }
 
-    /* 检查行程定时是否到期 */
-    if ((int32_t)(millis() - s_gesture_deadline_ms) >= 0) {
+    /* 检查行程定时是否到期（仅在定时激活时检查，避免到期后重复调用） */
+    if (s_gesture_timed && (int32_t)(millis() - s_gesture_deadline_ms) >= 0) {
         /* CH1~CH5 回归 1500us；CH6 不受行程影响，保持当前值 */
         uint16_t mid[PWM_CHANNEL_COUNT];
         for (uint8_t i = 0; i < PWM_CHANNEL_COUNT; i++) {
