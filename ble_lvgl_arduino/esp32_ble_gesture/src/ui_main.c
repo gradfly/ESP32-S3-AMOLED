@@ -35,6 +35,7 @@ static lv_obj_t *s_screen_data = NULL;
 static lv_obj_t *s_screen_pwm = NULL;
 static lv_obj_t *s_screen_gesture = NULL;   /* 数字手势屏：12 格图片网格 */
 static lv_obj_t *s_screen_gesture_recv = NULL;  /* 手势识别屏：BLE 数据对应手势图形 */
+static lv_obj_t *s_screen_finger_motion = NULL; /* Finger Motion 屏：5 格单指控制 */
 
 /* 手势识别屏 UI 对象 */
 static lv_obj_t *s_gesture_recv_img = NULL;     /* 手势图片（3x 放大显示） */
@@ -99,6 +100,15 @@ static lv_obj_t *s_estop_label = NULL;
 static lv_obj_t *s_gesture_estop_btn   = NULL;
 static lv_obj_t *s_gesture_estop_label = NULL;
 
+/* Finger Motion 屏 UI 对象 */
+#define FINGER_MOTION_COUNT 5
+static lv_obj_t *s_finger_motion_cells[FINGER_MOTION_COUNT] = {0};
+static lv_obj_t *s_finger_motion_labels[FINGER_MOTION_COUNT] = {0};
+static uint8_t   s_selected_finger_motion = 0xFF;  /* 当前选中项，0xFF=无 */
+static lv_obj_t *s_finger_motion_info_label = NULL;  /* 底部 6 路输出汇总 */
+static lv_obj_t *s_finger_motion_estop_btn   = NULL;
+static lv_obj_t *s_finger_motion_estop_label = NULL;
+
 /* 力度/行程调节滑块（主屏） */
 static lv_obj_t *s_force_slider = NULL;
 static lv_obj_t *s_force_value_label = NULL;
@@ -148,6 +158,7 @@ static const ui_screen_t s_swipe_order[] = {UI_SCREEN_MAIN, UI_SCREEN_DATA, UI_S
 
 static lv_point_t s_swipe_start_pt = {0};
 static bool       s_swipe_started  = false;
+static bool       s_swipe_animating = false;
 static uint32_t   s_last_swipe_ms  = 0;
 
 static void event_scan_btn_cb(lv_event_t *e);
@@ -192,6 +203,12 @@ static void create_uuid_screen(void);
 static void create_pwm_screen(void);
 static void create_gesture_screen(void);
 static void create_gesture_recv_screen(void);
+static void create_finger_motion_screen(void);
+static void event_finger_motion_cell_click_cb(lv_event_t *e);
+static void finger_motion_update_info_label(const uint16_t *us);
+static void finger_motion_swipe_gesture_cb(lv_event_t *e);
+static void setup_finger_motion_screen_swipe(lv_obj_t *screen);
+static void gesture_swipe_to_finger_motion(void);
 
 /* ====== 边缘滑动切换屏幕：实现 ====== */
 
@@ -202,7 +219,7 @@ static void swipe_do_switch(bool go_next)
 {
     /* 防抖：动画进行中不响应新滑动 */
     uint32_t now = lv_tick_get();
-    if (now - s_last_swipe_ms < SWIPE_DEBOUNCE_MS) return;
+    if (s_swipe_animating || now - s_last_swipe_ms < SWIPE_DEBOUNCE_MS) return;
 
     lv_obj_t *active = lv_disp_get_scr_act(lv_disp_get_default());
     int cur_idx = -1;
@@ -212,6 +229,7 @@ static void swipe_do_switch(bool go_next)
         case UI_SCREEN_MAIN:    scr = s_screen_main;    break;
         case UI_SCREEN_DATA:    scr = s_screen_data;    break;
         case UI_SCREEN_PWM:     scr = s_screen_pwm;     break;
+        case UI_SCREEN_FINGER_MOTION: scr = s_screen_finger_motion; break;
         case UI_SCREEN_GESTURE: scr = s_screen_gesture; break;
         case UI_SCREEN_GESTURE_RECV: scr = s_screen_gesture_recv; break;
         default: break;
@@ -228,6 +246,7 @@ static void swipe_do_switch(bool go_next)
     case UI_SCREEN_MAIN:    target_scr = s_screen_main;    break;
     case UI_SCREEN_DATA:    target_scr = s_screen_data;    break;
     case UI_SCREEN_PWM:     target_scr = s_screen_pwm;     break;
+    case UI_SCREEN_FINGER_MOTION: target_scr = s_screen_finger_motion; break;
     case UI_SCREEN_GESTURE: target_scr = s_screen_gesture; break;
     case UI_SCREEN_GESTURE_RECV: target_scr = s_screen_gesture_recv; break;
     default: return;
@@ -239,6 +258,7 @@ static void swipe_do_switch(bool go_next)
 
     lv_scr_load_anim_t anim = go_next ? LV_SCR_LOAD_ANIM_MOVE_LEFT
                                       : LV_SCR_LOAD_ANIM_MOVE_RIGHT;
+    s_swipe_animating = true;
     lv_scr_load_anim(target_scr, anim, SWIPE_ANIM_MS, 0, false);
     s_last_swipe_ms = now;
     /* 动画结束后 refresh 目标屏状态（动画期间活动屏未切换，需延迟） */
@@ -340,9 +360,14 @@ static void setup_screen_swipe(lv_obj_t *screen)
     lv_obj_add_event_cb(right_zone, swipe_zone_gesture_cb, LV_EVENT_GESTURE, NULL);
 }
 
-/* ====== 手势屏专用边缘滑动（不在线性顺序中） ======
- * 手势屏由主屏 "自主训练" 按钮进入，仅右边缘左滑返回主屏。
- * 不复用 swipe_do_switch（手势屏不在 s_swipe_order 中，cur_idx 会<0）。
+/* ====== 手势屏 / Finger Motion 屏专用边缘滑动（不在线性顺序中） ======
+ * 手势屏由主屏 "自主训练" 按钮进入：
+ *   右边缘左滑 -> 返回主屏（回归姿势 + 关闭手势模式）
+ *   左边缘右滑 -> 切换到 Finger Motion 屏（手势模式保持开启）
+ * Finger Motion 屏位于手势屏左侧：
+ *   右边缘左滑 -> 切换到手势屏
+ *   左边缘右滑 -> 返回主屏（回归姿势 + 关闭手势模式）
+ * 不复用 swipe_do_switch（两屏均不在 s_swipe_order 中，cur_idx 会<0）。
  * 返回主屏前：6 路 PWM 输出回归姿势 1350/2000/2000/2000/2000/2000us。 */
 static const uint16_t s_gesture_rest_pose[PWM_CHANNEL_COUNT] = {1350,2000,2000,2000,2000,2000};
 
@@ -350,7 +375,7 @@ static void gesture_swipe_to_main(void)
 {
     /* 防抖：动画进行中不响应新滑动 */
     uint32_t now = lv_tick_get();
-    if (now - s_last_swipe_ms < SWIPE_DEBOUNCE_MS) return;
+    if (s_swipe_animating || now - s_last_swipe_ms < SWIPE_DEBOUNCE_MS) return;
 
     /* 返回主屏前设置回归姿势（手势模式仍开启，立即刷新硬件）。
      * 回归姿势为初始姿态，不受行程定时影响（rest_pose=true） */
@@ -384,6 +409,7 @@ static void gesture_swipe_to_main(void)
     }
     s_selected_gesture = 0xFF;
 
+    s_swipe_animating = true;
     lv_scr_load_anim(s_screen_main, LV_SCR_LOAD_ANIM_MOVE_LEFT, SWIPE_ANIM_MS, 0, false);
     s_last_swipe_ms = now;
     schedule_status_refresh();
@@ -391,7 +417,27 @@ static void gesture_swipe_to_main(void)
     xSemaphoreGiveRecursive(mux);
 }
 
-/* 手势屏手势（屏幕级 + 格子级共用）：右边缘起手左滑 -> 返回主屏 */
+/* 手势屏左边缘右滑 -> Finger Motion 屏（手势模式保持开启，无需回归姿势） */
+static void gesture_swipe_to_finger_motion(void)
+{
+    uint32_t now = lv_tick_get();
+    if (s_swipe_animating || now - s_last_swipe_ms < SWIPE_DEBOUNCE_MS) return;
+
+    SemaphoreHandle_t mux = get_lvgl_mutex();
+    if (!mux) return;
+    if (xSemaphoreTakeRecursive(mux, pdMS_TO_TICKS(100)) != pdTRUE) return;
+
+    s_swipe_animating = true;
+    lv_scr_load_anim(s_screen_finger_motion, LV_SCR_LOAD_ANIM_MOVE_RIGHT, SWIPE_ANIM_MS, 0, false);
+    s_last_swipe_ms = now;
+    schedule_status_refresh();
+
+    xSemaphoreGiveRecursive(mux);
+}
+
+/* 手势屏手势（屏幕级 + 格子级共用）：
+ *   右边缘起手左滑 -> 返回主屏
+ *   左边缘起手右滑 -> 切换到 Finger Motion 屏 */
 static void gesture_swipe_gesture_cb(lv_event_t *e)
 {
     if (!s_swipe_started) return;
@@ -404,7 +450,97 @@ static void gesture_swipe_gesture_cb(lv_event_t *e)
     if (s_swipe_start_pt.x > EXAMPLE_LCD_H_RES - SWIPE_EDGE_WIDTH &&
         dir == LV_DIR_LEFT) {
         gesture_swipe_to_main();   /* 右边缘左滑 -> 主屏 */
+    } else if (s_swipe_start_pt.x < SWIPE_EDGE_WIDTH &&
+               dir == LV_DIR_RIGHT) {
+        gesture_swipe_to_finger_motion();  /* 左边缘右滑 -> Finger Motion */
     }
+}
+
+/* ====== Finger Motion 屏专用边缘滑动 ======
+ * 右边缘左滑 -> 手势屏；左边缘右滑 -> 主屏（回归姿势 + 关闭手势模式） */
+static void finger_motion_swipe_to_gesture(void)
+{
+    uint32_t now = lv_tick_get();
+    if (s_swipe_animating || now - s_last_swipe_ms < SWIPE_DEBOUNCE_MS) return;
+
+    SemaphoreHandle_t mux = get_lvgl_mutex();
+    if (!mux) return;
+    if (xSemaphoreTakeRecursive(mux, pdMS_TO_TICKS(100)) != pdTRUE) return;
+
+    s_swipe_animating = true;
+    lv_scr_load_anim(s_screen_gesture, LV_SCR_LOAD_ANIM_MOVE_LEFT, SWIPE_ANIM_MS, 0, false);
+    s_last_swipe_ms = now;
+    schedule_status_refresh();
+
+    xSemaphoreGiveRecursive(mux);
+}
+
+static void finger_motion_swipe_to_main(void)
+{
+    uint32_t now = lv_tick_get();
+    if (s_swipe_animating || now - s_last_swipe_ms < SWIPE_DEBOUNCE_MS) return;
+
+    pwm_manager_set_gesture_outputs_timed(s_gesture_rest_pose, PWM_CHANNEL_COUNT, true);
+    pwm_manager_set_gesture_mode(false);
+
+    SemaphoreHandle_t mux = get_lvgl_mutex();
+    if (!mux) return;
+    if (xSemaphoreTakeRecursive(mux, pdMS_TO_TICKS(100)) != pdTRUE) return;
+
+    /* 更新 Finger Motion 屏底部汇总 + 清除选中高亮 */
+    if (s_finger_motion_info_label) {
+        char buf[64];
+        snprintf(buf, sizeof(buf), "PWM: %u %u %u %u %u %u",
+                 s_gesture_rest_pose[0], s_gesture_rest_pose[1], s_gesture_rest_pose[2],
+                 s_gesture_rest_pose[3], s_gesture_rest_pose[4], s_gesture_rest_pose[5]);
+        lv_label_set_text(s_finger_motion_info_label, buf);
+    }
+    for (uint8_t i = 0; i < FINGER_MOTION_COUNT; i++) {
+        if (s_finger_motion_cells[i]) {
+            lv_obj_set_style_bg_color(s_finger_motion_cells[i], lv_color_hex(COLOR_CARD), 0);
+        }
+        if (s_finger_motion_labels[i]) {
+            lv_obj_set_style_text_color(s_finger_motion_labels[i], lv_color_hex(COLOR_TEXT_PRIMARY), 0);
+        }
+    }
+    s_selected_finger_motion = 0xFF;
+
+    s_swipe_animating = true;
+    lv_scr_load_anim(s_screen_main, LV_SCR_LOAD_ANIM_MOVE_RIGHT, SWIPE_ANIM_MS, 0, false);
+    s_last_swipe_ms = now;
+    schedule_status_refresh();
+
+    xSemaphoreGiveRecursive(mux);
+}
+
+/* Finger Motion 屏手势（屏幕级 + 格子级共用） */
+static void finger_motion_swipe_gesture_cb(lv_event_t *e)
+{
+    if (!s_swipe_started) return;
+    s_swipe_started = false;
+
+    lv_indev_t *indev = lv_indev_get_act();
+    if (!indev) return;
+    lv_dir_t dir = lv_indev_get_gesture_dir(indev);
+
+    if (s_swipe_start_pt.x > EXAMPLE_LCD_H_RES - SWIPE_EDGE_WIDTH &&
+        dir == LV_DIR_LEFT) {
+        finger_motion_swipe_to_gesture();  /* 右边缘左滑 -> 手势屏 */
+    } else if (s_swipe_start_pt.x < SWIPE_EDGE_WIDTH &&
+               dir == LV_DIR_RIGHT) {
+        finger_motion_swipe_to_main();      /* 左边缘右滑 -> 主屏 */
+    }
+}
+
+/* 为 Finger Motion 屏绑定屏幕级边缘滑动（无透明热区）。
+ * 格子需接收点击，格子自身另绑 PRESSED+GESTURE（与手势屏同模式）。 */
+static void setup_finger_motion_screen_swipe(lv_obj_t *screen)
+{
+    if (!screen) return;
+    lv_obj_add_flag(screen, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_clear_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_event_cb(screen, swipe_press_cb, LV_EVENT_PRESSED, NULL);
+    lv_obj_add_event_cb(screen, finger_motion_swipe_gesture_cb, LV_EVENT_GESTURE, NULL);
 }
 
 /* 为手势屏绑定屏幕级边缘滑动（无透明热区）。
@@ -462,6 +598,7 @@ void ui_init(void)
     create_pwm_screen();
     create_gesture_screen();
     create_gesture_recv_screen();
+    create_finger_motion_screen();
 
     /* 主屏：仅用屏幕级手势（无热区），滑块需接收拖拽，热区会阻挡滑块操作。
      * 数据屏：含透明热区的完整边缘滑动（线性顺序 Main<->Data<->PWM<->GestureRecv） */
@@ -471,8 +608,11 @@ void ui_init(void)
     setup_screen_swipe_base(s_screen_pwm);
     /* 手势识别屏仅用屏幕级手势（无热区），与 PWM 屏一致 */
     setup_screen_swipe_base(s_screen_gesture_recv);
-    /* 手势屏不在线性顺序中：由主屏 "自主训练" 按钮进入，右边缘左滑返回主屏 */
+    /* 手势屏不在线性顺序中：由主屏 "自主训练" 按钮进入，右边缘左滑返回主屏，
+     * 左边缘右滑切换到 Finger Motion 屏 */
     setup_gesture_screen_swipe(s_screen_gesture);
+    /* Finger Motion 屏不在线性顺序中：位于手势屏左侧，通过滑动与手势屏切换 */
+    setup_finger_motion_screen_swipe(s_screen_finger_motion);
 
     lv_scr_load(s_screen_main);
 }
@@ -1121,6 +1261,178 @@ static void gesture_update_info_label(const uint16_t *us)
     xSemaphoreGiveRecursive(mux);
 }
 
+/* 更新 Finger Motion 屏底部信息行：6 路输出脉宽汇总 */
+static void finger_motion_update_info_label(const uint16_t *us)
+{
+    if (!us) return;
+    SemaphoreHandle_t mux = get_lvgl_mutex();
+    if (!mux) return;
+    if (xSemaphoreTakeRecursive(mux, pdMS_TO_TICKS(100)) != pdTRUE) return;
+
+    if (s_finger_motion_info_label) {
+        char buf[64];
+        snprintf(buf, sizeof(buf), "PWM: %u %u %u %u %u %u",
+                 us[0], us[1], us[2], us[3], us[4], us[5]);
+        lv_label_set_text(s_finger_motion_info_label, buf);
+    }
+
+    xSemaphoreGiveRecursive(mux);
+}
+
+/* ====== Finger Motion 屏：5 格单指控制 ======
+ * 布局（280x456）：标题 / 5 行 1 列网格 / 底部 6 路汇总 / E-STOP 按钮。
+ * 点击 Index/Middle/Ring/Little finger 时 CH1 + 对应通道输出 1000us，其余 2000us。
+ * 点击 Reset 时 CH1~CH5 全部输出 2000us。
+ * 持续时间受 Stroke Level 变量影响（行程定时到期后 CH1~CH5 回归 1500us）。
+ * 位于手势屏左侧，通过滑动切换：左边缘右滑 -> 主屏，右边缘左滑 -> 手势屏。 */
+static const uint16_t s_finger_motion_pwm[FINGER_MOTION_COUNT][PWM_CHANNEL_COUNT] = {
+    {1000, 1000, 2000, 2000, 2000, 1800},  /* Index finger: CH1+CH2=1000, CH6=1800 */
+    {1000, 2000, 1000, 2000, 2000, 1800},  /* Middle finger: CH1+CH3=1000, CH6=1800 */
+    {1000, 2000, 2000, 1000, 2000, 1800},  /* Ring finger: CH1+CH4=1000, CH6=1800 */
+    {1000, 2000, 2000, 2000, 1000, 1800},  /* Little finger: CH1+CH5=1000, CH6=1800 */
+    {2000, 2000, 2000, 2000, 2000, 1350},  /* Reset: CH1~CH4=2000，CH6=1350 */
+};
+static const char *s_finger_motion_names[FINGER_MOTION_COUNT] = {
+    "Index finger", "Middle finger", "Ring finger", "Little finger", "Reset"
+};
+
+static void create_finger_motion_screen(void)
+{
+    s_screen_finger_motion = lv_obj_create(NULL);
+    lv_obj_set_size(s_screen_finger_motion, EXAMPLE_LCD_H_RES, EXAMPLE_LCD_V_RES);
+    lv_obj_set_style_bg_color(s_screen_finger_motion, lv_color_hex(COLOR_BG), 0);
+    lv_obj_set_style_border_width(s_screen_finger_motion, 0, 0);
+    lv_obj_set_style_pad_all(s_screen_finger_motion, 0, 0);
+
+    lv_obj_t *title = lv_label_create(s_screen_finger_motion);
+    lv_label_set_text(title, "Finger Motion");
+    lv_obj_add_style(title, &s_title_style, 0);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 12);
+
+    /* 5 格网格：1 列 x 5 行，cell 256x48, 间距 8px。
+     * grid 高度 = 4 + 5*48 + 4*8 + 4 = 280 */
+    lv_obj_t *grid = lv_obj_create(s_screen_finger_motion);
+    lv_obj_set_size(grid, EXAMPLE_LCD_H_RES - 12, 280);
+    lv_obj_align(grid, LV_ALIGN_TOP_MID, 0, 52);
+    lv_obj_set_style_pad_all(grid, 4, 0);
+    lv_obj_set_style_border_width(grid, 0, 0);
+    lv_obj_set_style_bg_opa(grid, LV_OPA_TRANSP, 0);
+    lv_obj_set_scrollbar_mode(grid, LV_SCROLLBAR_MODE_OFF);
+    lv_obj_clear_flag(grid, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+
+    for (uint8_t i = 0; i < FINGER_MOTION_COUNT; i++) {
+        lv_coord_t y = 4 + i * 56;  /* 48 + 8 间距 */
+
+        lv_obj_t *cell = lv_obj_create(grid);
+        lv_obj_set_pos(cell, 4, y);
+        lv_obj_set_size(cell, 256, 48);
+        lv_obj_set_style_bg_color(cell, lv_color_hex(COLOR_CARD), 0);
+        lv_obj_set_style_radius(cell, 6, 0);
+        lv_obj_set_style_pad_all(cell, 3, 0);
+        lv_obj_set_style_border_width(cell, 0, 0);
+        lv_obj_clear_flag(cell, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_add_flag(cell, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_add_event_cb(cell, event_finger_motion_cell_click_cb, LV_EVENT_CLICKED, NULL);
+        lv_obj_add_event_cb(cell, swipe_press_cb, LV_EVENT_PRESSED, NULL);
+        lv_obj_add_event_cb(cell, finger_motion_swipe_gesture_cb, LV_EVENT_GESTURE, NULL);
+
+        lv_obj_t *name = lv_label_create(cell);
+        lv_label_set_text(name, s_finger_motion_names[i]);
+        lv_obj_set_style_text_font(name, &lv_font_montserrat_16, 0);
+        lv_obj_set_style_text_color(name, lv_color_hex(COLOR_TEXT_PRIMARY), 0);
+        lv_obj_center(name);
+
+        s_finger_motion_cells[i] = cell;
+        s_finger_motion_labels[i] = name;
+    }
+
+    /* 底部信息行：6 路输出脉宽汇总 */
+    s_finger_motion_info_label = lv_label_create(s_screen_finger_motion);
+    lv_label_set_text(s_finger_motion_info_label, "PWM: ---- ---- ---- ---- ---- ----");
+    lv_obj_add_style(s_finger_motion_info_label, &s_label_style, 0);
+    lv_obj_set_style_text_font(s_finger_motion_info_label, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(s_finger_motion_info_label, lv_color_hex(COLOR_TEXT_PRIMARY), 0);
+    lv_obj_set_width(s_finger_motion_info_label, EXAMPLE_LCD_H_RES - 16);
+    lv_label_set_long_mode(s_finger_motion_info_label, LV_LABEL_LONG_WRAP);
+    lv_obj_align(s_finger_motion_info_label, LV_ALIGN_TOP_MID, 0, 340);
+
+    /* 急停按钮：与手势屏/PWM 屏共享同一全局急停状态 */
+    s_finger_motion_estop_btn = lv_btn_create(s_screen_finger_motion);
+    lv_obj_set_size(s_finger_motion_estop_btn, 256, 70);
+    lv_obj_set_style_radius(s_finger_motion_estop_btn, 10, 0);
+    lv_obj_set_style_shadow_width(s_finger_motion_estop_btn, 0, 0);
+    lv_obj_set_style_pad_all(s_finger_motion_estop_btn, 0, 0);
+    lv_obj_align(s_finger_motion_estop_btn, LV_ALIGN_BOTTOM_MID, 0, -6);
+    s_finger_motion_estop_label = lv_label_create(s_finger_motion_estop_btn);
+    lv_obj_set_style_text_font(s_finger_motion_estop_label, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_color(s_finger_motion_estop_label, lv_color_white(), 0);
+    lv_obj_center(s_finger_motion_estop_label);
+    lv_obj_add_event_cb(s_finger_motion_estop_btn, event_estop_btn_cb, LV_EVENT_CLICKED, NULL);
+
+    bool init_estop = pwm_manager_get_estop();
+    if (s_finger_motion_estop_label) {
+        lv_label_set_text(s_finger_motion_estop_label, init_estop ? "Resume" : "E-STOP");
+    }
+    if (s_finger_motion_estop_btn) {
+        if (init_estop) {
+            lv_obj_set_style_bg_color(s_finger_motion_estop_btn, lv_color_hex(COLOR_ESTOP_ACTIVE), 0);
+            lv_obj_set_style_border_color(s_finger_motion_estop_btn, lv_color_hex(COLOR_ESTOP_BORDER), 0);
+            lv_obj_set_style_border_width(s_finger_motion_estop_btn, 3, 0);
+        } else {
+            lv_obj_set_style_bg_color(s_finger_motion_estop_btn, lv_color_hex(COLOR_ESTOP), 0);
+            lv_obj_set_style_border_width(s_finger_motion_estop_btn, 0, 0);
+        }
+    }
+}
+
+/* Finger Motion 格子点击：选中该格（互斥蓝底白字），设置对应 6 路 PWM 输出，
+ * 更新底部 6 路汇总。行程定时到期后 CH1~CH5 回归 1500us。
+ * 急停优先级高于手势输出：急停开启时硬件输出 1500us，底部汇总同步显示。 */
+static void event_finger_motion_cell_click_cb(lv_event_t *e)
+{
+    lv_obj_t *clicked = lv_event_get_current_target(e);
+    if (!clicked) return;
+
+    uint8_t idx;
+    for (idx = 0; idx < FINGER_MOTION_COUNT; idx++) {
+        if (s_finger_motion_cells[idx] == clicked) break;
+    }
+    if (idx >= FINGER_MOTION_COUNT) return;
+
+    /* 设置 6 路 PWM 输出（手势模式已开启，立即刷新硬件）。
+     * 行程定时：到期后 CH1~CH5 回归 1500us（rest_pose=false） */
+    pwm_manager_set_gesture_outputs_timed(s_finger_motion_pwm[idx], PWM_CHANNEL_COUNT, false);
+
+    /* 互斥高亮：清除所有格子，当前格蓝底白字 */
+    SemaphoreHandle_t mux = get_lvgl_mutex();
+    if (mux && xSemaphoreTakeRecursive(mux, pdMS_TO_TICKS(100)) == pdTRUE) {
+        for (uint8_t i = 0; i < FINGER_MOTION_COUNT; i++) {
+            bool sel = (i == idx);
+            if (s_finger_motion_cells[i]) {
+                lv_obj_set_style_bg_color(s_finger_motion_cells[i],
+                    sel ? lv_color_hex(COLOR_ACCENT_DARK) : lv_color_hex(COLOR_CARD), 0);
+            }
+            if (s_finger_motion_labels[i]) {
+                lv_obj_set_style_text_color(s_finger_motion_labels[i],
+                    sel ? lv_color_white() : lv_color_hex(COLOR_TEXT_PRIMARY), 0);
+            }
+        }
+        s_selected_finger_motion = idx;
+        xSemaphoreGiveRecursive(mux);
+    }
+
+    /* 更新底部 6 路输出汇总：急停开启时统一显示 1500us */
+    if (pwm_manager_get_estop()) {
+        static const uint16_t estop_pwm[PWM_CHANNEL_COUNT] = {
+            PWM_OUT_MID_US, PWM_OUT_MID_US, PWM_OUT_MID_US,
+            PWM_OUT_MID_US, PWM_OUT_MID_US, PWM_OUT_MID_US
+        };
+        finger_motion_update_info_label(estop_pwm);
+    } else {
+        finger_motion_update_info_label(s_finger_motion_pwm[idx]);
+    }
+}
+
 /* UUID 设置屏：连接前让用户设置 服务/通知/写 UUID。
  * 布局（280x456，内边距 8）：标题 / 3 字段 / 十六进制键盘 / 取消+连接。
  * LV_USE_KEYBOARD=0，故自建 btnmatrix 十六进制键盘（0-F + DEL/CLR）。 */
@@ -1303,7 +1615,7 @@ static void event_uuid_connect_cb(lv_event_t *e)
  *   MAIN  s_scan_btn 文字/禁用: SCANNING→"Scanning..."+禁用, 其它→"Scan"+可用
  *   DATA  s_data_status_label:  CONNECTED→"Connected: <name>", 否则→s_last_message
  *   PWM   s_pwm_status_label:   同 DATA
- * LIST/UUID/GESTURE 屏无 status label，自动跳过。 */
+ * LIST/UUID/GESTURE/FINGER_MOTION 屏无 status label，自动跳过。 */
 static void refresh_active_screen_status(void)
 {
     lv_obj_t *scr = lv_scr_act();
@@ -1370,6 +1682,42 @@ static void refresh_active_screen_status(void)
         }
         /* 切到手势识别屏时用缓存数据刷新手势显示 */
         ui_update_gesture_recv(s_pwm_values_cache, s_pwm_count_cache);
+    } else if (scr == s_screen_finger_motion) {
+        /* 进入 Finger Motion 屏：启用手势模式（直接指定 PWM 输出，忽略 BLE）。
+         * 防止 BLE 连接/断开事件关闭手势模式后，pwm_manager_update() 用
+         * CH1 派生值覆盖 CH6（以及 CH1~CH5 的手势输出值）。 */
+        if (!pwm_manager_get_gesture_mode()) {
+            pwm_manager_set_gesture_mode(true);
+        }
+        /* 刷新 E-STOP 按钮状态 + 底部 6 路汇总 */
+        bool estop = pwm_manager_get_estop();
+        if (s_finger_motion_estop_label) {
+            lv_label_set_text(s_finger_motion_estop_label, estop ? "Resume" : "E-STOP");
+        }
+        if (s_finger_motion_estop_btn) {
+            if (estop) {
+                lv_obj_set_style_bg_color(s_finger_motion_estop_btn, lv_color_hex(COLOR_ESTOP_ACTIVE), 0);
+                lv_obj_set_style_border_color(s_finger_motion_estop_btn, lv_color_hex(COLOR_ESTOP_BORDER), 0);
+                lv_obj_set_style_border_width(s_finger_motion_estop_btn, 3, 0);
+            } else {
+                lv_obj_set_style_bg_color(s_finger_motion_estop_btn, lv_color_hex(COLOR_ESTOP), 0);
+                lv_obj_set_style_border_width(s_finger_motion_estop_btn, 0, 0);
+            }
+        }
+        /* 底部汇总：急停时 6 路 1500us，否则显示当前手势输出值 */
+        if (s_finger_motion_info_label) {
+            uint16_t us[PWM_CHANNEL_COUNT];
+            if (estop) {
+                for (uint8_t i = 0; i < PWM_CHANNEL_COUNT; i++) us[i] = PWM_OUT_MID_US;
+            } else {
+                for (uint8_t i = 0; i < PWM_CHANNEL_COUNT; i++)
+                    us[i] = pwm_manager_get_gesture_us(i);
+            }
+            char buf[64];
+            snprintf(buf, sizeof(buf), "PWM: %u %u %u %u %u %u",
+                     us[0], us[1], us[2], us[3], us[4], us[5]);
+            lv_label_set_text(s_finger_motion_info_label, buf);
+        }
     }
 }
 
@@ -1382,6 +1730,7 @@ static void status_refresh_timer_cb(lv_timer_t *t)
         refresh_active_screen_status();
         xSemaphoreGiveRecursive(mux);
     }
+    s_swipe_animating = false;
     s_status_refresh_timer = NULL;  /* 一次性 timer，LVGL 已自动删除 */
 }
 
@@ -1394,7 +1743,11 @@ static void schedule_status_refresh(void)
         lv_timer_del(s_status_refresh_timer);
     }
     s_status_refresh_timer = lv_timer_create(status_refresh_timer_cb, SWIPE_ANIM_MS + 20, NULL);
-    lv_timer_set_repeat_count(s_status_refresh_timer, 1);
+    if (s_status_refresh_timer) {
+        lv_timer_set_repeat_count(s_status_refresh_timer, 1);
+    } else {
+        s_swipe_animating = false;
+    }
 }
 
 void ui_switch_screen(ui_screen_t screen)
@@ -1419,6 +1772,9 @@ void ui_switch_screen(ui_screen_t screen)
         break;
     case UI_SCREEN_PWM:
         lv_scr_load(s_screen_pwm);
+        break;
+    case UI_SCREEN_FINGER_MOTION:
+        lv_scr_load(s_screen_finger_motion);
         break;
     case UI_SCREEN_GESTURE:
         lv_scr_load(s_screen_gesture);
@@ -1468,9 +1824,14 @@ void ui_update_state(ble_state_t state, const char *message)
                 ui_clear_data();
                 ui_clear_pwm();
                 /* 手势模式在连接后自动关闭：PWM 重新跟随 BLE 输入数据。
+                 * 但 Finger Motion 屏和手势训练屏使用手动 PWM 控制，需保持手势模式，
+                 * 否则 pwm_manager_update() 会用 BLE 派生值覆盖 CH6 及其他通道。
                  * 同时重置 s_recv_gesture_mode，否则 refresh_active_screen_status()
                  * 误以为仍在手势模式而不关闭，导致 pwm_manager_update() 跳过所有通道。 */
-                pwm_manager_set_gesture_mode(false);
+                if (lv_scr_act() != s_screen_finger_motion &&
+                    lv_scr_act() != s_screen_gesture) {
+                    pwm_manager_set_gesture_mode(false);
+                }
                 s_recv_gesture_mode = false;
                 s_last_recv_matched = -1;
             } else {
@@ -1497,7 +1858,13 @@ void ui_update_state(ble_state_t state, const char *message)
                     pwm_manager_set_override(i, false);
                 }
                 pwm_manager_set_estop(false);
-                pwm_manager_set_gesture_mode(false);
+                /* Finger Motion 屏和手势训练屏保持手势模式，避免 BLE 断开后
+                 * pwm_manager_update(NULL,0) 空指针解引用（values=NULL 时
+                 * 自动映射路径会访问 values[i]），同时保留手动 PWM 输出。 */
+                if (lv_scr_act() != s_screen_finger_motion &&
+                    lv_scr_act() != s_screen_gesture) {
+                    pwm_manager_set_gesture_mode(false);
+                }
                 s_recv_gesture_mode = false;
                 s_last_recv_matched = -1;
                 /* 清除内部输出缓存；下一帧 BLE 数据会重新写入硬件。 */
@@ -1674,13 +2041,14 @@ void ui_update_pwm_values(const int16_t *values, uint8_t count)
         memcpy(s_pwm_values_cache, values, s_pwm_count_cache * sizeof(int16_t));
     }
 
-    /* 仅在 PWM 屏或 Gesture 屏活动时更新 UI 对象——对非活动屏对象操作
+    /* 仅在 PWM 屏、Gesture 屏或 Finger Motion 屏活动时更新 UI 对象——对非活动屏对象操作
      * 会触发重绘，在切屏动画期间导致 LVGL 渲染负载激增、栈溢出重启。
-     * 数据已缓存，切到 PWM/Gesture 屏后会从缓存刷新显示。 */
+     * 数据已缓存，切到 PWM/Gesture/Finger Motion 屏后会从缓存刷新显示。 */
     lv_obj_t *act_scr = lv_scr_act();
     bool pwm_active = (act_scr == s_screen_pwm);
     bool gesture_active = (act_scr == s_screen_gesture);
-    if (!pwm_active && !gesture_active) {
+    bool finger_motion_active = (act_scr == s_screen_finger_motion);
+    if (!pwm_active && !gesture_active && !finger_motion_active) {
         xSemaphoreGiveRecursive(mux);
         return;
     }
@@ -1817,6 +2185,35 @@ void ui_update_pwm_values(const int16_t *values, uint8_t count)
             }
         }
     }
+    if (finger_motion_active) {
+        if (s_finger_motion_estop_label) {
+            lv_label_set_text(s_finger_motion_estop_label, estop ? "Resume" : "E-STOP");
+        }
+        if (s_finger_motion_estop_btn) {
+            if (estop) {
+                lv_obj_set_style_bg_color(s_finger_motion_estop_btn, lv_color_hex(COLOR_ESTOP_ACTIVE), 0);
+                lv_obj_set_style_border_color(s_finger_motion_estop_btn, lv_color_hex(COLOR_ESTOP_BORDER), 0);
+                lv_obj_set_style_border_width(s_finger_motion_estop_btn, 3, 0);
+            } else {
+                lv_obj_set_style_bg_color(s_finger_motion_estop_btn, lv_color_hex(COLOR_ESTOP), 0);
+                lv_obj_set_style_border_width(s_finger_motion_estop_btn, 0, 0);
+            }
+        }
+        /* 底部 6 路汇总：急停时 1500us，否则显示当前手势输出值 */
+        if (s_finger_motion_info_label) {
+            uint16_t us[PWM_CHANNEL_COUNT];
+            if (estop) {
+                for (uint8_t i = 0; i < PWM_CHANNEL_COUNT; i++) us[i] = PWM_OUT_MID_US;
+            } else {
+                for (uint8_t i = 0; i < PWM_CHANNEL_COUNT; i++)
+                    us[i] = pwm_manager_get_gesture_us(i);
+            }
+            char buf[64];
+            snprintf(buf, sizeof(buf), "PWM: %u %u %u %u %u %u",
+                     us[0], us[1], us[2], us[3], us[4], us[5]);
+            lv_label_set_text(s_finger_motion_info_label, buf);
+        }
+    }
 
     xSemaphoreGiveRecursive(mux);
 }
@@ -1932,10 +2329,11 @@ void ui_update_gesture_recv(const int16_t *values, uint8_t count)
                 pwm_manager_set_gesture_outputs(mid, PWM_CHANNEL_COUNT);
             }
         }
-    } else if (!on_screen && lv_scr_act() != s_screen_gesture && pwm_manager_get_gesture_mode()) {
-        /* 不在手势识别屏且不在训练屏但手势模式仍开启：立即关闭，使
+    } else if (!on_screen && lv_scr_act() != s_screen_gesture &&
+               lv_scr_act() != s_screen_finger_motion && pwm_manager_get_gesture_mode()) {
+        /* 不在手势识别屏、训练屏、Finger Motion 屏但手势模式仍开启：立即关闭，使
          * pwm_manager_update() 走自动映射路径写硬件。
-         * 训练屏（s_screen_gesture）也使用手势模式，不能在此关闭，
+         * 训练屏（s_screen_gesture）和 Finger Motion 屏也使用手势模式，不能在此关闭，
          * 否则 BLE 数据到达时 pwm_manager_update() 会走 BLE 自动映射，
          * 用 BLE 推算值覆盖手势 PWM 值——值相同的通道不受影响（跳过写），
          * 值不同的通道被覆盖为错误值，导致舵机停止运行。 */
@@ -2181,7 +2579,7 @@ static void event_pwm_cell_click_cb(lv_event_t *e)
  * 开启 -> 所有 CH 通道强制输出 1500us（优先级高于 CH 值与单通道覆盖）；
  * 再次点击 -> 关闭急停，恢复各通道正常行为。
  * 点击后立即刷新 PWM 硬件 + UI（输出脉宽、颜色、汇总行、按钮文字）。
- * Gesture 页面的汇总信息行也同步更新（急停显示6路1500，关闭则恢复当前手势值）。 */
+ * Gesture / Finger Motion 屏的汇总信息行也同步更新。 */
 static void event_estop_btn_cb(lv_event_t *e)
 {
     (void)e;
@@ -2191,22 +2589,31 @@ static void event_estop_btn_cb(lv_event_t *e)
     /* 立即刷新 PWM 硬件输出（使用缓存的最新数据） */
     pwm_manager_update(s_pwm_values_cache, s_pwm_count_cache);
 
-    /* 立即刷新 PWM 屏 UI 显示（含两个页面的 E-STOP 按钮状态同步） */
+    /* 立即刷新 UI 显示（含 PWM/Gesture/Finger Motion 屏的 E-STOP 按钮状态同步） */
     ui_update_pwm_values(s_pwm_values_cache, s_pwm_count_cache);
 
-    /* Gesture 屏底部 6 路汇总信息行同步：急停 → 全部 1500us；关闭急停 → 恢复选中手势 */
+    static const uint16_t estop_pwm[PWM_CHANNEL_COUNT] = {
+        PWM_OUT_MID_US, PWM_OUT_MID_US, PWM_OUT_MID_US,
+        PWM_OUT_MID_US, PWM_OUT_MID_US, PWM_OUT_MID_US
+    };
+
+    /* Gesture 屏底部汇总：急停 → 全部 1500us；关闭急停 → 恢复选中手势 */
     if (new_state) {
-        static const uint16_t estop_pwm[PWM_CHANNEL_COUNT] = {
-            PWM_OUT_MID_US, PWM_OUT_MID_US, PWM_OUT_MID_US,
-            PWM_OUT_MID_US, PWM_OUT_MID_US, PWM_OUT_MID_US
-        };
         gesture_update_info_label(estop_pwm);
     } else if (s_selected_gesture < GESTURE_COUNT) {
-        /* 恢复之前选中的手势输出（力度重映射 + 行程定时） */
         uint16_t remapped[PWM_CHANNEL_COUNT];
         remap_gesture_pwm(s_gestures[s_selected_gesture].pwm, remapped);
         pwm_manager_set_gesture_outputs_timed(remapped, PWM_CHANNEL_COUNT, false);
         gesture_update_info_label(remapped);
+    }
+
+    /* Finger Motion 屏底部汇总：急停 → 全部 1500us；关闭急停 → 恢复选中项 */
+    if (new_state) {
+        finger_motion_update_info_label(estop_pwm);
+    } else if (s_selected_finger_motion < FINGER_MOTION_COUNT) {
+        pwm_manager_set_gesture_outputs_timed(s_finger_motion_pwm[s_selected_finger_motion],
+                                               PWM_CHANNEL_COUNT, false);
+        finger_motion_update_info_label(s_finger_motion_pwm[s_selected_finger_motion]);
     }
 }
 
@@ -2280,7 +2687,7 @@ static void event_stroke_slider_cb(lv_event_t *e)
     pwm_manager_set_stroke_level(level);
 }
 
-/* 手势定时到期回调：手势屏底部汇总更新为 6 路 1500us */
+/* 手势定时到期回调：手势屏 / Finger Motion 屏底部汇总更新为 6 路 1500us */
 void ui_gesture_expired(void)
 {
     static const uint16_t mid_pwm[PWM_CHANNEL_COUNT] = {
@@ -2288,6 +2695,7 @@ void ui_gesture_expired(void)
         PWM_OUT_MID_US, PWM_OUT_MID_US, PWM_OUT_MID_US
     };
     gesture_update_info_label(mid_pwm);
+    finger_motion_update_info_label(mid_pwm);
     /* 重置识别屏匹配状态，使下次数据帧能重新触发手势输出
      * （定时到期后 6 路已回归 1500us，若手势仍在检测则重新输出） */
     s_last_recv_matched = -1;

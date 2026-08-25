@@ -14,6 +14,7 @@ typedef enum {
     UI_SCREEN_UUID,   /* 连接前设置 服务/通知/写 UUID */
     UI_SCREEN_DATA,
     UI_SCREEN_PWM,    /* PWM 输出屏：显示 CH1~CH5 输入值 + 对应 PWM 输出 */
+    UI_SCREEN_FINGER_MOTION,/* Finger Motion 屏：5 格单指控制，位于手势屏左侧 */
     UI_SCREEN_GESTURE,/* 数字手势屏：12 格网格，每格图片 + 名称 */
     UI_SCREEN_GESTURE_RECV, /* 手势识别屏：根据 BLE 数据前 5 路显示对应手势图形 */
 } ui_screen_t;

@@ -8,11 +8,12 @@
 #define LV_COLOR_SCREEN_TRANSP 0
 #define LV_COLOR_MIX_ROUND_OFS 0
 
-#define LV_MEM_CUSTOM 0
+#define LV_MEM_CUSTOM 1
 #if LV_MEM_CUSTOM == 0
 #define LV_MEM_SIZE (48U * 1024U)
 #define LV_MEM_ADR 0
 #endif
+#define LV_MEM_CUSTOM_INCLUDE <stdlib.h>
 
 #define LV_MEM_BUF_MAX_NUM 16
 

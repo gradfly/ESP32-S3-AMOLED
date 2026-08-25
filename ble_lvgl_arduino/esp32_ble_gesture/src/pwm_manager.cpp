@@ -332,7 +332,7 @@ void pwm_manager_update(const int16_t *values, uint8_t count)
             /* CH1~CH5：直接映射各自 BLE 输入值
              * <650 -> 高档，>650 -> 低档，=650 -> 1500us
              * 高/低档由力度调节滑块决定（默认 2000/1000） */
-            //if (!has_5) continue;       /* 数据不足，保持上一次输出 */
+            if (!has_5) continue;       /* 数据不足，保持上一次输出 */
             int16_t v = values[i];
             if (v < PWM_VALUE_THRESHOLD) {
                 us = pwm_manager_get_high_us();
