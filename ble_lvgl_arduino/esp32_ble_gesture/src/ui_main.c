@@ -148,9 +148,10 @@ static void set_cjk_font(lv_obj_t *obj)
 /* ====== 屏幕边缘滑动切换 ======
  * 主屏 / 数据屏 / PWM 屏 / 手势识别屏 线性顺序：Main <-> Data <-> PWM <-> GestureRecv。
  * 左边缘起手右滑 -> 上一屏；右边缘起手左滑 -> 下一屏。
- * 手势训练屏不在此线性顺序中：由主屏 "自主训练" 按钮进入，右边缘左滑返回主屏。
+ * 主屏左边缘右滑 -> 手势训练屏（自定义，启用手势模式 + 回归姿势）。
+ * 手势训练屏：右边缘左滑返回主屏，左边缘右滑切换到 Finger Motion 屏。
  * 按下需落在屏幕空白区域（非按钮/列表等子对象），否则手势事件不会到达屏幕。 */
-#define SWIPE_EDGE_WIDTH    80      /* 距左右边缘 80px 内起手才算边缘滑动 */
+#define SWIPE_EDGE_WIDTH    140     /* 距左右边缘 140px 内起手才算边缘滑动 */
 #define SWIPE_ANIM_MS       300     /* 切屏滑动动画时长 */
 #define SWIPE_DEBOUNCE_MS   400     /* 防抖：两次滑动最小间隔（>动画时长） */
 static const ui_screen_t s_swipe_order[] = {UI_SCREEN_MAIN, UI_SCREEN_DATA, UI_SCREEN_PWM, UI_SCREEN_GESTURE_RECV};
@@ -555,6 +556,75 @@ static void setup_gesture_screen_swipe(lv_obj_t *screen)
     lv_obj_add_event_cb(screen, gesture_swipe_gesture_cb, LV_EVENT_GESTURE, NULL);
 }
 
+/* ====== 主屏专用边缘滑动 ======
+ * 左边缘右滑 -> 手势屏（启用手势模式 + 回归姿势）；
+ * 右边缘左滑 -> 数据屏（线性顺序 swipe_do_switch）。 */
+static void main_swipe_to_gesture(void)
+{
+    uint32_t now = lv_tick_get();
+    if (s_swipe_animating || now - s_last_swipe_ms < SWIPE_DEBOUNCE_MS) return;
+
+    /* 启用手势模式 + 设置回归姿势（初始姿态，不受行程定时影响） */
+    pwm_manager_set_gesture_outputs_timed(s_gesture_rest_pose, PWM_CHANNEL_COUNT, true);
+    pwm_manager_set_gesture_mode(true);
+
+    SemaphoreHandle_t mux = get_lvgl_mutex();
+    if (!mux) return;
+    if (xSemaphoreTakeRecursive(mux, pdMS_TO_TICKS(100)) != pdTRUE) return;
+
+    /* 清除手势屏选中高亮 + 更新底部汇总（下次进入为干净状态） */
+    for (uint8_t i = 0; i < GESTURE_COUNT; i++) {
+        if (s_gesture_cells[i]) {
+            lv_obj_set_style_bg_color(s_gesture_cells[i], lv_color_hex(COLOR_CARD), 0);
+        }
+        if (s_gesture_name_labels[i]) {
+            lv_obj_set_style_text_color(s_gesture_name_labels[i], lv_color_hex(COLOR_TEXT_PRIMARY), 0);
+        }
+    }
+    s_selected_gesture = 0xFF;
+
+    if (s_gesture_info_label) {
+        char buf[64];
+        snprintf(buf, sizeof(buf), "PWM: %u %u %u %u %u %u",
+                 s_gesture_rest_pose[0], s_gesture_rest_pose[1], s_gesture_rest_pose[2],
+                 s_gesture_rest_pose[3], s_gesture_rest_pose[4], s_gesture_rest_pose[5]);
+        lv_label_set_text(s_gesture_info_label, buf);
+    }
+
+    s_swipe_animating = true;
+    lv_scr_load_anim(s_screen_gesture, LV_SCR_LOAD_ANIM_MOVE_RIGHT, SWIPE_ANIM_MS, 0, false);
+    s_last_swipe_ms = now;
+    schedule_status_refresh();
+
+    xSemaphoreGiveRecursive(mux);
+}
+
+static void main_swipe_gesture_cb(lv_event_t *e)
+{
+    if (!s_swipe_started) return;
+    s_swipe_started = false;
+
+    lv_indev_t *indev = lv_indev_get_act();
+    if (!indev) return;
+    lv_dir_t dir = lv_indev_get_gesture_dir(indev);
+
+    if (s_swipe_start_pt.x < SWIPE_EDGE_WIDTH && dir == LV_DIR_RIGHT) {
+        main_swipe_to_gesture();   /* 左边缘右滑 -> 手势屏 */
+    } else if (s_swipe_start_pt.x > EXAMPLE_LCD_H_RES - SWIPE_EDGE_WIDTH &&
+               dir == LV_DIR_LEFT) {
+        swipe_do_switch(true);    /* 右边缘左滑 -> 数据屏（线性顺序） */
+    }
+}
+
+static void setup_main_screen_swipe(lv_obj_t *screen)
+{
+    if (!screen) return;
+    lv_obj_add_flag(screen, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_clear_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_event_cb(screen, swipe_press_cb, LV_EVENT_PRESSED, NULL);
+    lv_obj_add_event_cb(screen, main_swipe_gesture_cb, LV_EVENT_GESTURE, NULL);
+}
+
 void ui_init(void)
 {
     lv_disp_t *disp = get_display();
@@ -600,9 +670,9 @@ void ui_init(void)
     create_gesture_recv_screen();
     create_finger_motion_screen();
 
-    /* 主屏：仅用屏幕级手势（无热区），滑块需接收拖拽，热区会阻挡滑块操作。
+    /* 主屏：自定义屏幕级手势（左边缘右滑->手势屏，右边缘左滑->数据屏）。
      * 数据屏：含透明热区的完整边缘滑动（线性顺序 Main<->Data<->PWM<->GestureRecv） */
-    setup_screen_swipe_base(s_screen_main);
+    setup_main_screen_swipe(s_screen_main);
     setup_screen_swipe(s_screen_data);
     /* PWM 屏仅用屏幕级手势（无热区）：格子自身需接收点击，热区会阻挡点击 */
     setup_screen_swipe_base(s_screen_pwm);
